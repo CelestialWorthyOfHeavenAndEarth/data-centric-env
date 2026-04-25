@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Package managers
+uv.lock
+poetry.lock
+
+# Test / build artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Training outputs (generated — not committed until training is done)
+sft_data.jsonl
+generations.jsonl
+training_log.json
+sft-checkpoint/
+data-centric-checkpoints/
+data-centric-adapter/
+data-centric-merged/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Hackathon docs (keep local only)
+*.pdf
+\[External\]*/

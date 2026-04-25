@@ -1,0 +1,47 @@
+name: data-centric-env
+description: >
+  Train an LLM agent to improve ML datasets using the Data-Centric AI paradigm.
+  The agent coordinates specialist sub-agents (CleanerAgent, AugmenterAgent,
+  BalancerAgent, ValidatorAgent) to fix data quality issues and improve a fixed
+  classifier's accuracy — without changing the model architecture or hyperparameters.
+  Based on Andrew Ng's Data-Centric AI framework.
+version: "1.1.0"
+tags:
+  - data-centric-ai
+  - world-modeling
+  - professional-tasks
+  - reinforcement-learning
+  - grpo
+  - unsloth
+  - curriculum-learning
+
+tasks:
+  - name: task_0_tutorial
+    description: >
+      Single-issue tutorial. 100 rows, binary classification, 4 features.
+      Only issue: 15-30% missing values. Baseline ~0.62, target 0.73. Budget: 30 steps.
+  - name: task_1_easy
+    description: >
+      Two issues: missing values (8-25%) + mild class imbalance (5-20%).
+      200 rows, binary, 5 features. Baseline ~0.63, target 0.79. Budget: 25 steps.
+  - name: task_2_medium
+    description: >
+      Four issues: missing values, duplicates, class imbalance, type errors.
+      500 rows, 3-class, 7 features. Baseline ~0.58, target 0.74. Budget: 40 steps.
+  - name: task_3_hard
+    description: >
+      Six issues: missing values, duplicates, imbalance, type errors, outliers,
+      cross-column logic errors. 900 rows, 4-class, 10 features.
+      Baseline ~0.54, target 0.71. Budget: 60 steps.
+
+action_type: text
+observation_type: structured
+
+# Reward components:
+#   accuracy_reward:    [-1.0, +1.0] — accuracy delta × 2.5, submit bonus +0.50
+#   process_reward:     [-0.10, +0.05] — workflow pattern scoring
+#   preservation_reward:[-0.40, +0.05] — row preservation incentive
+#   efficiency_reward:  [-0.05, +0.20] — at submit only
+#   step_reward:        [-0.30, +0.15] — proxy quality delta per apply
+# Total clamped to [-1.0, 1.0] by compute_total_reward()
+reward_range: [-1.0, 1.0]
