@@ -120,12 +120,13 @@ def run_sft_warmup(model, tokenizer):
         train_dataset=sft_dataset,
         args=SFTConfig(
             output_dir="./sft-checkpoint",
-            # WHY max_steps=200:
+            # WHY max_steps=350:
             #   Full dataset = 9,480 examples. 1 epoch @ batch=4 = 2,370 steps.
-            #   At ~0.07 it/s on T4 that's 9+ hours just for SFT.
-            #   SFT only teaches command syntax ("apply 1", "validate", etc.)
-            #   200 steps is more than enough for that — real learning is GRPO.
-            max_steps=200,
+            #   At ~0.07 it/s on T4, full epoch = 9+ hours — way too slow.
+            #   200 steps taught basic syntax but format% was only 64% in GRPO.
+            #   +150 more steps (~6 extra min) should push format% to 85-90%+,
+            #   meaning GRPO starts with a much stronger command-following baseline.
+            max_steps=350,
             per_device_train_batch_size=4,   # smaller batch = faster step on T4
             gradient_accumulation_steps=2,   # effective batch = 8
             learning_rate=2e-5,
