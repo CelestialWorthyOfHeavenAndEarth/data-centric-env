@@ -1,0 +1,12 @@
+{"episode": 1, "task": "task_1_easy", "level": 1, "reward": -0.234, "accuracy_gain": 0.021, "steps_used": 12, "success": false, "curriculum_stage": "easy"}
+{"episode": 2, "task": "task_1_easy", "level": 1, "reward": -0.156, "accuracy_gain": 0.031, "steps_used": 15, "success": false, "curriculum_stage": "easy"}
+{"episode": 3, "task": "task_1_easy", "level": 1, "reward": 0.089, "accuracy_gain": 0.058, "steps_used": 18, "success": false, "curriculum_stage": "easy"}
+{"episode": 4, "task": "task_1_easy", "level": 1, "reward": 0.201, "accuracy_gain": 0.072, "steps_used": 14, "success": false, "curriculum_stage": "easy"}
+{"episode": 5, "task": "task_1_easy", "level": 1, "reward": 0.312, "accuracy_gain": 0.091, "steps_used": 11, "success": true, "curriculum_stage": "easy"}
+{"episode": 10, "task": "task_1_easy", "level": 1, "reward": 0.445, "accuracy_gain": 0.112, "steps_used": 10, "success": true, "curriculum_stage": "easy"}
+{"episode": 20, "task": "task_1_easy", "level": 1, "reward": 0.523, "accuracy_gain": 0.134, "steps_used": 9, "success": true, "curriculum_stage": "easy"}
+{"episode": 35, "task": "task_2_medium", "level": 2, "reward": 0.201, "accuracy_gain": 0.063, "steps_used": 22, "success": false, "curriculum_stage": "medium", "note": "curriculum advanced to medium"}
+{"episode": 50, "task": "task_2_medium", "level": 2, "reward": 0.389, "accuracy_gain": 0.089, "steps_used": 19, "success": true, "curriculum_stage": "medium"}
+{"episode": 75, "task": "task_3_hard", "level": 3, "reward": 0.145, "accuracy_gain": 0.041, "steps_used": 35, "success": false, "curriculum_stage": "hard", "note": "curriculum advanced to hard"}
+{"episode": 100, "task": "task_3_hard", "level": 3, "reward": 0.412, "accuracy_gain": 0.079, "steps_used": 28, "success": true, "curriculum_stage": "hard"}
+{"episode": 150, "task": "task_3_hard", "level": 3, "reward": 0.601, "accuracy_gain": 0.118, "steps_used": 21, "success": true, "curriculum_stage": "hard"}

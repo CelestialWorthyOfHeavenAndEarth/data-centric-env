@@ -23,14 +23,21 @@ htmlcov/
 dist/
 build/
 
-# Training outputs (generated — not committed until training is done)
+# Large generated files (not committed — too big or re-generatable)
 sft_data.jsonl
 generations.jsonl
 training_log.json
+
+# Model checkpoints (too large for git — download from HF Hub instead)
 sft-checkpoint/
 data-centric-checkpoints/
 data-centric-adapter/
 data-centric-merged/
+
+# Training logs — COMMIT THESE after a real run (judges require them)
+# logs/training.jsonl   <- per-episode reward JSONL
+# logs/grpo/            <- TensorBoard event files
+# Un-comment above ONLY if you deliberately want to exclude them.
 
 # IDE
 .vscode/
