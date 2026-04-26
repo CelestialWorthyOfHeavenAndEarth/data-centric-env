@@ -16,7 +16,7 @@ import os, sys, time, glob, subprocess, requests
 
 ENV_URL    = os.environ.get("ENV_URL", "https://aswini-kumar-data-centric-env.hf.space")
 HF_TOKEN   = os.environ.get("HF_TOKEN", "")
-SPACE_REPO = "Aswinis-Kumar/data-centric-env"
+SPACE_REPO = "Aswini-Kumar/data-centric-env"
 
 print(f"[Job] ENV_URL   : {ENV_URL}")
 print(f"[Job] WorkingDir: {os.getcwd()}")

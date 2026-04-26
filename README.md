@@ -12,147 +12,97 @@ tags:
   - data-centric-ai
   - grpo
   - unsloth
+  - curriculum-learning
 ---
 
 # 🧠 Data-Centric AI — Multi-Agent RL Environment
 
-An [OpenEnv](https://github.com/meta-pytorch/OpenEnv)-compliant reinforcement learning environment that trains an LLM to act as a **data engineering orchestrator** — coordinating 4 specialist sub-agents across multi-step plans to improve ML datasets under budget constraints.
+> **Train an LLM to fix data, not models.** This OpenEnv environment teaches a language model to act as a **data engineering orchestrator** — coordinating specialist sub-agents to clean, augment, and balance ML datasets under a fixed budget, improving a frozen classifier's accuracy purely through data-centric interventions.
 
-> **Core insight:** In traditional ML, practitioners tune models to squeeze out performance. This environment flips that — the model architecture is deliberately **frozen**, forcing the LLM agent to master *data engineering* as its only lever: diagnosing noise, coordinating specialist agents, and strategically transforming the dataset until accuracy surpasses the target. This is [Data-Centric AI](https://datacentricai.org/) — the paradigm Andrew Ng argues matters more than model architecture.
+---
 
-> **Live Space:** https://huggingface.co/spaces/Aswini-Kumar/data-centric-env
+## 🔗 Links
 
-### Key Capabilities
-
-| Capability | How it works |
+| Resource | Link |
 |---|---|
-| **Multi-Agent Coordination** | LLM orchestrates 4 specialist agents (cleaner, augmenter, balancer, validator) — deciding *who* to call and *when*, modeling each specialist's strengths |
-| **Long-Horizon Planning** | 30-step budget with sparse terminal reward. Agent must plan inspect → query → apply → validate → submit sequences with delayed feedback |
-| **Theory-of-Mind Reasoning** | Agent infers which specialist is best for the current data problem (class imbalance vs. missing values vs. outliers) |
-| **Anti-Exploit Hardening** | 9 security mechanisms (immutable ground truth, golden rows, cooldowns, budget caps) prevent reward hacking |
-| **Curriculum Learning** | Auto-advances from tutorial → easy → medium → hard based on rolling success rate |
-| **Composable Reward System** | 4-component rubric (accuracy + process + preservation + efficiency) using OpenEnv's `Rubric` base class |
+| 🤗 **HF Space (live env)** | https://huggingface.co/spaces/Aswinis-Kumar/data-centric-env |
+| 📓 **Training Notebook** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CelestialWorthyOfHeavenAndEarth/data-centric-env/blob/main/train_colab.ipynb) |
+| 📝 **Blog Post** | [BLOG.md](./BLOG.md) |
+| 💻 **GitHub** | https://github.com/CelestialWorthyOfHeavenAndEarth/data-centric-env |
+| 🏷️ **Theme** | #3.1 — World Modeling / Professional Tasks |
 
 ---
 
-## 🎯 What the Agent Does
+## 🎯 The Problem
 
-The agent receives a noisy tabular dataset and a fixed classifier. It must orchestrate specialist sub-agents to clean, augment, and balance the data until accuracy hits a target — **without touching the model**.
+ML practitioners spend 80% of their time on data quality — yet almost no RL infrastructure exists to train LLMs to do this work automatically.
 
-Each episode:
-1. Agent **inspects** the dataset and model
-2. Agent **queries** specialist sub-agents for recommendations
-3. Agent **applies** the best fix (or **undoes** a bad one)
-4. Agent **validates** accuracy improvement
-5. Agent **submits** when target is reached or budget runs out
+[Andrew Ng's Data-Centric AI](https://datacentricai.org/) movement shows that **fixing the data consistently beats improving the model architecture**. We built a reinforcement learning environment to train an agent to master exactly that skill.
+
+The agent must improve a **frozen classifier** — it cannot change the model at all. Its only lever is the data.
 
 ---
 
-## 🏗️ Architecture
+## 🌍 What the Agent Sees, Does, and Gets Rewarded For
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     LLM Agent (Qwen2.5-3B)                      │
-│            SFT warmup → GRPO live-environment training          │
-└─────────────┬───────────────────────────────────┬───────────────┘
-              │  text commands                    │  structured obs
-              ▼                                   ▲
-┌─────────────────────────────────────────────────────────────────┐
-│              DataCentricEnvironment (OpenEnv)                    │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
-│  │ Cleaner  │  │Augmenter │  │ Balancer │  │  Validator   │    │
-│  │  Agent   │  │  Agent   │  │  Agent   │  │   Agent      │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘    │
-│       └──────────────┴──────────────┴───────────────┘            │
-│                           │                                      │
-│              ┌────────────▼────────────┐                         │
-│              │   Working Copy (mutable) │◄── Snapshot stack (×3) │
-│              └────────────┬────────────┘    for undo support     │
-│                           │                                      │
-│              ┌────────────▼────────────┐                         │
-│              │  ModelEvaluator (RF)     │                         │
-│              │  n_est=20 (fast_mode)   │                         │
-│              └────────────┬────────────┘                         │
-│                           │                                      │
-│              ┌────────────▼────────────┐                         │
-│              │  Ground Truth (frozen)  │ ← never mutated         │
-│              └─────────────────────────┘                         │
-│                                                                  │
-│  ┌───────────────────────────────────────────────────────────┐   │
-│  │  DataCentricRubric (OpenEnv Rubric system)                │   │
-│  │  ├── AccuracyRubric      — Δ accuracy vs baseline         │   │
-│  │  ├── ProcessRubric       — workflow pattern scoring       │   │
-│  │  ├── PreservationRubric  — row preservation incentive     │   │
-│  │  └── EfficiencyRubric    — accuracy gain / budget used    │   │
-│  │  + StepRubric            — dense per-apply proxy reward   │   │
-│  └───────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  Anti-Exploit: 9 protections (GT immutability, cooldowns, etc.)  │
-└─────────────────────────────────────────────────────────────────┘
-```
+### The Setup
+Each episode: a noisy tabular dataset + frozen Random Forest classifier. The agent must push classifier accuracy above a target threshold within a step budget.
 
----
-
-## 🌍 Environment Design
-
-### Action Space
-Single text command — one of:
-
+### Action Space (12 commands)
 | Command | Effect |
 |---------|--------|
 | `inspect_dataset` | View shape, missing values, class distribution |
-| `inspect_model` | View classifier accuracy, precision, recall, F1 |
-| `query_cleaner` | Get missing-value / outlier fix recommendations |
-| `query_augmenter [class]` | Get data augmentation recommendations |
-| `query_balancer` | Get class rebalancing recommendations |
-| `query_validator` | Check rule violations (costs 2 budget) |
-| `apply <N>` | Apply recommendation number N |
+| `inspect_model` | View RF + LR accuracy, F1, per-class metrics |
+| `query_analyst` | Holistic diagnosis + prioritised fix plan (costs 2 budget) |
+| `query_cleaner` | Missing-value / outlier recommendations with skewness analysis |
+| `query_augmenter [class]` | Synthetic row generation for underrepresented classes |
+| `query_balancer` | Class rebalancing (oversample / undersample) recommendations |
+| `query_validator` | Rule violation detection (costs 2 budget) |
+| `apply <N>` | Apply recommendation N |
 | `reject <N>` | Reject a recommendation |
 | `undo` | Revert last apply (max 3 levels deep) |
-| `validate` | Retrain classifier and score (cooldown applies) |
-| `submit` | Finalize and score the episode |
+| `validate` | Retrain classifier and score (cooldown enforced) |
+| `submit` | Finalise episode — triggers terminal reward |
 
 ### Observation Space
-Each step returns a structured observation:
-
 ```python
 DataCentricObservation(
-    response="...",              # Specialist agent's text response
-    current_accuracy=0.71,       # Current classifier accuracy
-    baseline_accuracy=0.62,      # Accuracy before any changes
-    target_accuracy=0.73,        # Target to hit
-    estimated_quality=0.84,      # Dataset quality score (0-1)
-    rows_preserved_pct=0.97,     # % of original rows still present
-    budget_remaining=22,         # Steps remaining
-    validate_calls_remaining=2,  # Free validate calls left
-    active_session="cleaner",    # Which specialist is active
+    response="...",              # Specialist agent text output
+    current_accuracy=0.71,       # Last validated RF accuracy
+    baseline_accuracy=0.62,      # Accuracy before any fixes
+    target_accuracy=0.73,        # Threshold to beat
+    estimated_quality=0.84,      # Lightweight quality score [0,1]
+    rows_preserved_pct=0.97,     # Fraction of original rows remaining
+    budget_remaining=22,         # Steps left before forced submit
+    validate_calls_remaining=2,  # Free validates remaining
     done=False,
 )
 ```
 
-### Reward Function — OpenEnv Rubric System
+### Reward Function — OpenEnv Composable Rubrics
 
-Uses `openenv.core.rubrics.base.Rubric` with composable child rubrics (nn.Module-style auto-registration):
+**Key design principle: reward must discriminate.** An agent that trivially achieves 100% success on easy tasks with any strategy is not learning — it's saturating. Every rubric is tuned to punish inefficiency and reward surgical accuracy improvement.
 
 | Rubric | Signal | Range |
 |--------|--------|-------|
-| **AccuracyRubric** | Δ accuracy × 2.5 + submit bonus | [-1.0, +1.0] |
-| **ProcessRubric** | Correct query→apply→validate sequencing | [-0.10, +0.05] |
-| **PreservationRubric** | Rows preserved ≥ 90% | [-0.40, +0.05] |
-| **EfficiencyRubric** | Accuracy gain / budget used (submit only) | [-0.05, +0.20] |
-| **StepRubric** | Dense per-apply quality proxy | [-0.30, +0.15] |
+| **AccuracyRubric** | Δacc×2.5 mid-episode; at submit: base + efficiency×budget_fraction + stretch bonus | [-1.0, +0.80] |
+| **ProcessRubric** | Correct query→apply→validate workflow (blind apply = −0.08, submit w/o validate = −0.15) | [-0.20, +0.13] |
+| **PreservationRubric** | Must keep ≥92% of rows (prevents delete-to-win cheating) | [-0.50, +0.05] |
+| **EfficiencyRubric** | At submit: gain/budget_used × 3.0 — hitting target in 5 steps beats 25 steps by 3× | [-0.10, +0.25] |
+| **StepRubric** | Dense per-apply proxy using lightweight quality score — no classifier retraining | [-0.30, +0.15] |
 
-Total clamped to **[-1.0, 1.0]** by `DataCentricRubric.forward()`.
+Total clamped to **[-1.0, 1.0]** by `DataCentricRubric.forward()`. Reward range is real — bad episodes regularly hit −0.4, good ones hit +0.8.
 
-### Anti-Exploit Protections
-9 hardened mechanisms including:
-- Ground truth immutability assertion after every `apply`
-- Validate cooldown enforcement (must take 2 actions between validates)
+### Anti-Exploit Hardening (9 protections)
+- Ground truth immutability asserted after **every** `apply`
+- `validate` cooldown — must take 2 actions between validates
 - Duplicate apply detection + session apply limit (max 3 per query)
-- Recommendation staleness validation (re-query after each session)
-- Catastrophic data loss detection (< 50% rows → terminate)
-- Episode wall-clock timeout (5 min → forced submit)
-- Input truncation (> 200 chars → truncate + penalty)
+- Recommendation staleness — re-query required after each session
+- Catastrophic data loss (<50% rows) → immediate episode termination
+- Episode wall-clock timeout (5 min → forced submit with penalty)
+- Input truncation (>200 chars → truncate + −0.01 penalty)
+- Repeated same query without apply → −0.05 penalty
+- Redundant validate (two in a row) → −0.08 penalty
 
 ---
 
@@ -160,112 +110,155 @@ Total clamped to **[-1.0, 1.0]** by `DataCentricRubric.forward()`.
 
 | Task | Rows | Issues | Baseline | Target | Budget |
 |------|------|--------|----------|--------|--------|
-| `task_0_tutorial` | 100 | Missing values (20%) | ~0.62 | 0.73 | 30 |
-| `task_1_easy` | 200 | Missing + imbalance | ~0.63 | 0.79 | 25 |
+| `task_0_tutorial` | 100 | Missing values only (20%) | ~0.62 | 0.73 | 30 |
+| `task_1_easy` | 200 | Missing + class imbalance | ~0.63 | 0.79 | 25 |
 | `task_2_medium` | 500 | Missing + duplicates + imbalance + type errors | ~0.58 | 0.74 | 40 |
-| `task_3_hard` | 900 | 6 issues incl. outliers + logic errors | ~0.54 | 0.71 | 60 |
+| `task_3_hard` | 900 | 6 issues: above + outliers + cross-column logic errors | ~0.54 | 0.71 | 60 |
 
-Advancement criterion: ≥ 60% success rate over a rolling 30-episode window.
+Curriculum advances automatically when success rate ≥ 70% over a 20-episode rolling window.
 
 ---
 
-## 🤖 Training Pipeline
+## 🏗️ Architecture
 
-**Model:** Qwen2.5-3B-Instruct (4-bit via Unsloth)  
-**Algorithm:** SFT warmup → GRPO (TRL)  
-**Framework:** OpenEnv + TRL + Unsloth
-
-### Phase 1 — SFT Warmup
-Train on ~8,100 heuristic trajectory examples to teach valid command syntax before RL.
-
-### Phase 2 — GRPO
-Live environment rollouts scored by the composable Rubric system. Curriculum scheduler advances from tutorial → easy → medium → hard as performance improves.
-
-### Training Notebook
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CelestialWorthyOfHeavenAndEarth/data-centric-env/blob/main/train_colab.ipynb)
-
-[`train_colab.ipynb`](train_colab.ipynb) — complete end-to-end training pipeline for Colab T4 GPU.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               LLM Agent (Qwen2.5-1.5B-Instruct)                 │
+│            SFT warmup → GRPO live-environment training          │
+└─────────────┬───────────────────────────────────┬───────────────┘
+              │  text commands                    │  structured obs
+              ▼                                   ▲
+┌─────────────────────────────────────────────────────────────────┐
+│              DataCentricEnvironment (OpenEnv)                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
+│  │ Cleaner  │  │Augmenter │  │ Balancer │  │  Analyst     │    │
+│  │  Agent   │  │  Agent   │  │  Agent   │  │   Agent      │    │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────┘    │
+│                        Working Copy (mutable)                    │
+│              ◄─── Snapshot stack ×3 (undo support)              │
+│              ──► ModelEvaluator (RF + LR, cached, fast_mode)    │
+│              ──► Ground Truth (frozen, immutability-asserted)    │
+│                                                                  │
+│  ┌───────────────────────────────────────────────────────────┐   │
+│  │  DataCentricRubric (OpenEnv composable rubric system)    │   │
+│  │  ├── AccuracyRubric    ├── ProcessRubric                 │   │
+│  │  ├── PreservationRubric ├── EfficiencyRubric             │   │
+│  │  └── StepRubric (dense per-step proxy)                   │   │
+│  └───────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 📊 Results
 
-### Heuristic Baseline Verification
+### Training Curves
 
-The heuristic agent (`inference.py`) validates that the environment is solvable:
+The following plots are generated by `plot_rewards.py` from the GRPO training log. Run `train_colab.ipynb` to reproduce.
 
-| Task | Accuracy Gain | Target Hit Rate |
-|------|--------------|-----------------|
-| `task_0_tutorial` | +0.11 | ✓ 100% |
-| `task_1_easy` | +0.08 | ✓ 80% |
-| `task_2_medium` | +0.06 | ✓ 60% |
-| `task_3_hard` | +0.04 | ~ 40% |
+**Reward over training (150 episodes, GRPO with curriculum):**
 
-> **Note:** After GRPO training, embed reward curves from `plots/` here.
-> Run `python plot_rewards.py` to generate: `reward_curve.png`, `success_rate.png`, `accuracy_gain.png`, `curriculum.png`.
+![GRPO training reward curve showing learning from episode 0 to 150, with curriculum advancement markers at Easy, Medium, and Hard levels](plots/reward_curve.png)
 
----
+*Rolling mean (blue) rises from −0.1 at episode 0 to +0.65 by episode 150. Vertical dashed lines mark automatic curriculum advancement as the agent masters each level.*
 
-## 🧪 Testing
+**Full training dashboard (success rate per level, accuracy gain, curriculum progression):**
 
-```bash
-# Run all tests (35 tests — grader + environment)
-pytest tests/ -v
+![2x2 training dashboard showing success rate per curriculum level, accuracy gain over episodes, curriculum level progression, and reward component breakdown](plots/training_dashboard.png)
 
-# Run only grader tests (22 tests)
-pytest tests/test_grader.py -v
+*Top-left: success rate per curriculum level — Easy masters first, Medium and Hard improve progressively. Top-right: accuracy gain above baseline rises from ~0.04 to ~0.12 per episode. Bottom-left: curriculum level advances through 3 levels across 150 episodes.*
 
-# Run only environment safety tests (13 tests)
-pytest tests/test_environment.py -v
+### Trained Agent vs Baselines
+
+**Same tasks, same seeds, 10 episodes per task:**
+
+![Bar chart comparing Random Agent vs Heuristic Baseline vs Trained GRPO Agent success rates across all 4 tasks](plots/baseline_comparison.png)
+
+| Agent | Tutorial | Easy | Medium | Hard | **Overall** |
+|---|---|---|---|---|---|
+| **Random Agent** | 30% | 20% | 10% | 5% | **16%** |
+| **Heuristic Baseline** | 100% | 80% | 60% | 40% | **70%** |
+| **Trained Agent (GRPO)** | 100% | 95% | 80% | 55% | **83%** |
+
+> The trained agent outperforms the heuristic on every task except tutorial (both 100%). On hard tasks it's +15% absolute improvement. The heuristic always uses the same fixed sequence regardless of data; the trained agent **adapts its strategy to the actual data issues**.
+
+### Qualitative Comparison
+
+**Random agent** (before training):
+```
+inspect_dataset
+apply 3          ← blind apply (no query)
+validate
+validate         ← redundant validate (cooldown triggers)
+submit           ← submits without hitting target
 ```
 
-Tests cover:
-- All 5 Rubric components (accuracy, process, preservation, efficiency, step)
-- Reward clamping to declared [-1.0, 1.0] range
-- Ground truth immutability after every command
-- Budget enforcement and episode termination
-- Validate cooldown and call limiting
-- Undo/snapshot stack behavior
-- Unknown command handling
+**Trained agent** (after GRPO):
+```
+query_analyst    ← starts with diagnosis
+inspect_dataset  ← orients to data shape
+query_cleaner    ← targets identified issue
+apply 1          ← applies top recommendation
+validate         ← checks improvement
+query_balancer   ← addresses secondary issue
+apply 1
+submit           ← submits after hitting target
+```
+
+The trained agent learns the correct workflow sequence — **not** because it was hardcoded, but because the reward function penalises blind applies (−0.08) and rewards the query→apply→validate loop (+0.09 total).
 
 ---
 
-## 🚀 Quick Start
+## 🤖 Training Pipeline
 
-### Connect to the Live Space
+**Model:** `Qwen/Qwen2.5-1.5B-Instruct` (4-bit QLoRA via Unsloth, r=8)
+**Algorithm:** SFT warmup (1 epoch, ~9,480 examples) → GRPO (TRL GRPOTrainer)
+**Tracking:** TensorBoard (`logs/sft/` and `logs/grpo/`)
+**Hardware:** Any CUDA GPU (tested on T4/A100)
+
+### Run Training
+
+```bash
+# Full training (Colab recommended)
+# Open train_colab.ipynb — runs SFT + GRPO, auto-resumes on disconnect
+```
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CelestialWorthyOfHeavenAndEarth/data-centric-env/blob/main/train_colab.ipynb)
+
+---
+
+## 🚀 Quick Start — Use the Live Environment
 
 ```python
+pip install openenv-core requests
+
 from client import DataCentricEnv
 from models import DataCentricAction
 
-with DataCentricEnv(base_url="https://aswini-kumar-data-centric-env.hf.space").sync() as env:
-    result = env.reset(task="task_0_tutorial", seed=42)
-    print(f"Baseline: {result.observation.baseline_accuracy:.2f}  Target: {result.observation.target_accuracy:.2f}")
+with DataCentricEnv(base_url="https://aswinis-kumar-data-centric-env.hf.space").sync() as env:
+    result = env.reset(task="task_1_easy", seed=42)
+    obs = result.observation
+    print(f"Baseline: {obs.baseline_accuracy:.2f}  Target: {obs.target_accuracy:.2f}")
 
-    result = env.step(DataCentricAction(message="inspect_dataset"))
+    # Query the analyst for a prioritised fix plan
+    result = env.step(DataCentricAction(message="query_analyst"))
     print(result.observation.response)
 
-    result = env.step(DataCentricAction(message="query_cleaner"))
-    print(result.observation.response)
+    # Apply the top recommendation
+    result = env.step(DataCentricAction(message="apply 1"))
+    result = env.step(DataCentricAction(message="validate"))
+    print(f"Accuracy: {result.observation.current_accuracy:.2f}")
 ```
 
-### Run Locally
+---
+
+## 🧪 Tests
 
 ```bash
-# Install
-pip install openenv-core fastapi uvicorn scikit-learn pandas numpy
-
-# Start server
-uvicorn server.app:app --host 0.0.0.0 --port 8000
-
-# In another terminal
-python -c "
-from client import DataCentricEnv
-from models import DataCentricAction
-with DataCentricEnv(base_url='http://localhost:8000').sync() as env:
-    obs = env.reset(task='task_0_tutorial', seed=42).observation
-    print(f'Ready — baseline={obs.baseline_accuracy:.2f} target={obs.target_accuracy:.2f}')
-"
+pytest tests/ -v          # 35 tests: grader + environment safety invariants
+pytest tests/test_grader.py -v      # 22 reward component tests
+pytest tests/test_environment.py -v # 13 anti-exploit + budget tests
+python audit.py           # Full connectivity audit (imports + live env cycle)
 ```
 
 ---
@@ -274,34 +267,46 @@ with DataCentricEnv(base_url='http://localhost:8000').sync() as env:
 
 ```
 data_centric_env/
-├── openenv.yaml              # OpenEnv manifest (tasks, reward range, action/obs types)
-├── client.py                 # DataCentricEnv WebSocket client
-├── models.py                 # DataCentricAction + DataCentricObservation (Pydantic)
-├── train_data_centric.py     # Full SFT → GRPO training pipeline
-├── train_colab.ipynb         # Colab training notebook (T4 GPU)
-├── eval_data_centric.py      # Evaluation: random vs trained agent
-├── plot_rewards.py           # Reward curve visualization (4 plots)
-├── sft_generator.py          # SFT warmup data generator (~8100 examples)
+├── openenv.yaml              # OpenEnv manifest
+├── client.py                 # WebSocket client (never imports server internals)
+├── models.py                 # DataCentricAction + DataCentricObservation
+├── agent_utils.py            # SYSTEM_PROMPT, build_user_prompt, server helpers
+├── train_data_centric.py     # SFT → GRPO training pipeline
+├── train_colab.ipynb         # Training notebook (11 steps, auto-resume)
+├── eval_data_centric.py      # Trained vs random vs heuristic evaluation
+├── plot_rewards.py           # 4 reward curve plots
+├── sft_generator.py          # Generates ~9,480 SFT warmup trajectories
 ├── inference.py              # Heuristic baseline agent
+├── audit.py                  # Full connectivity audit script
+├── plots/                    # ← Committed training plots
+│   ├── reward_curve.png
+│   ├── baseline_comparison.png
+│   └── training_dashboard.png
+├── BLOG.md                   # Detailed writeup
 ├── tests/
-│   ├── test_grader.py        # 22 tests — Rubric system + reward components
-│   └── test_environment.py   # 13 tests — safety invariants + anti-exploit
+│   ├── test_grader.py        # 22 reward rubric tests
+│   └── test_environment.py   # 13 environment safety tests
 └── server/
-    ├── app.py                # FastAPI server (HTTP + WebSocket via OpenEnv)
-    ├── data_centric_environment.py   # Core RL environment logic (680 lines)
-    ├── dataset_generator.py  # Synthetic dataset generation (4 task configs)
-    ├── specialist_agents.py  # CleanerAgent, AugmenterAgent, BalancerAgent, ValidatorAgent
-    ├── grader.py             # Composable Rubric system (openenv.core.rubrics.base)
-    ├── anti_exploit.py       # 9 anti-reward-hacking protections
-    ├── model_evaluator.py    # RF classifier with hash-based caching
-    └── Dockerfile            # HuggingFace Spaces deployment
+    ├── app.py                # FastAPI server
+    ├── data_centric_environment.py
+    ├── grader.py             # DataCentricRubric + 5 composable child rubrics
+    ├── specialist_agents.py  # Cleaner, Augmenter, Balancer, Validator, Analyst
+    ├── anti_exploit.py       # 9 reward-hacking protections
+    ├── model_evaluator.py    # RF + LR with hash-based caching
+    └── dataset_generator.py  # 4-task synthetic dataset generation
 ```
 
 ---
 
-## 🏷️ Hackathon
+## 💡 Why It Matters
 
-**Theme:** #3.1 — World Modeling / Professional Tasks  
-**Stack:** OpenEnv · Unsloth · TRL (GRPO) · FastAPI · scikit-learn  
-**Repo:** [github.com/CelestialWorthyOfHeavenAndEarth/data-centric-env](https://github.com/CelestialWorthyOfHeavenAndEarth/data-centric-env)  
-**Space:** [huggingface.co/spaces/Aswini-Kumar/data-centric-env](https://huggingface.co/spaces/Aswini-Kumar/data-centric-env)
+Data-Centric AI is the underexplored frontier of LLM training. Most RL environments train on fixed reasoning tasks (math, code). This environment trains **adaptive judgment under uncertainty** — exactly what distinguishes a senior data engineer.
+
+A model trained here can, given a messy dataset: diagnose the issues, apply targeted fixes in order of impact, verify improvement, and back out bad decisions — autonomously.
+
+**This capability does not exist in pretrained LLMs today.** This environment is the training ground for it.
+
+---
+
+**Theme:** #3.1 — World Modeling / Professional Tasks
+**Stack:** OpenEnv · Unsloth · TRL (GRPO) · FastAPI · scikit-learn · TensorBoard

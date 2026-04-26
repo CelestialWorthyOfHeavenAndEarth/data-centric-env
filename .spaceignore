@@ -15,6 +15,7 @@ venv/
 .pytest_cache/
 test_features_smoke.py
 uv.lock
+audit.py
 
 # Training-only scripts (not needed by the server at runtime)
 train_data_centric.py
@@ -23,16 +24,22 @@ eval_data_centric.py
 sft_generator.py
 inference.py
 hf_job_train.py
+submit_job.py
 plot_rewards.py
 
 # Generated training artefacts
 sft_data.jsonl
 generations.jsonl
 training_log.json
+logs/
 sft-checkpoint/
 data-centric-checkpoints/
 data-centric-adapter/
 data-centric-merged/
+
+# Hackathon PDFs and notes (use URLs instead)
+*.pdf
+BLOG.md
 
 # Git
 .git/

@@ -17,9 +17,7 @@ import sys
 import time
 from typing import Optional
 
-import requests
-import torch
-from unsloth import FastLanguageModel
+import requests  # lightweight — always available
 
 # WebSocket client for stateful episode rollouts
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,20 +39,18 @@ EPISODES_PER_TASK = 10
 TASKS = ["task_0_tutorial", "task_1_easy", "task_2_medium", "task_3_hard"]
 
 # ════════════════════════════════════════════════════════
-# SERVER MANAGEMENT
-# ════════════════════════════════════════════════════════
-
-
-
-# ════════════════════════════════════════════════════════
 # MODEL LOADING
 # ════════════════════════════════════════════════════════
 
 def load_trained_model():
+    """Lazy-load unsloth — only when adapter actually exists."""
+    import torch  # noqa: F401
+    from unsloth import FastLanguageModel
+
     if not os.path.exists(ADAPTER_PATH):
         raise FileNotFoundError(
             f"Adapter not found at {ADAPTER_PATH}. "
-            "Run train_data_centric.py first."
+            "Run train_data_centric.py (or train_colab.ipynb) first."
         )
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=ADAPTER_PATH,
