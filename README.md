@@ -6,7 +6,7 @@ colorTo: indigo
 sdk: docker
 pinned: false
 app_port: 7860
-short_description: "Don't retrain. Clean smarter. An RL agent learns to surgically repair datasets — lifting a frozen classifier without touching a single weight."
+short_description: "LLM learns to fix data, not models — GRPO RL env."
 tags:
   - openenv
   - reinforcement-learning
