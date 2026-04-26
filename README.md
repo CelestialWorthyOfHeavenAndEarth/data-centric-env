@@ -25,7 +25,7 @@ tags:
 
 | Resource | Link |
 |---|---|
-| 🤗 **HF Space (live env)** | https://huggingface.co/spaces/Aswinis-Kumar/data-centric-env |
+| 🤗 **HF Space (live env)** | https://huggingface.co/spaces/Aswini-Kumar/data-centric-env |
 | 📓 **Training Notebook** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CelestialWorthyOfHeavenAndEarth/data-centric-env/blob/main/train_colab.ipynb) |
 | 📝 **Blog Post** | [BLOG.md](./BLOG.md) |
 | 💻 **GitHub** | https://github.com/CelestialWorthyOfHeavenAndEarth/data-centric-env |
@@ -235,7 +235,7 @@ pip install openenv-core requests
 from client import DataCentricEnv
 from models import DataCentricAction
 
-with DataCentricEnv(base_url="https://aswinis-kumar-data-centric-env.hf.space").sync() as env:
+with DataCentricEnv(base_url="https://Aswini-Kumar-data-centric-env.hf.space").sync() as env:
     result = env.reset(task="task_1_easy", seed=42)
     obs = result.observation
     print(f"Baseline: {obs.baseline_accuracy:.2f}  Target: {obs.target_accuracy:.2f}")
