@@ -22,6 +22,10 @@ if sys_path_root not in sys.path:
     sys.path.insert(0, sys_path_root)
 from client import DataCentricEnv
 from models import DataCentricAction
+from agent_utils import (
+    VALID_COMMANDS, SYSTEM_PROMPT, build_user_prompt,
+    start_server, stop_server,
+)
 
 # ════════════════════════════════════════════════════════
 # CONSTANTS
@@ -34,82 +38,11 @@ MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
 MAX_SEQ_LENGTH = 1024
 LOAD_IN_4BIT = True
 
-VALID_COMMANDS = [
-    "inspect_dataset", "inspect_model", "query_analyst",
-    "query_cleaner", "query_augmenter", "query_balancer", "query_validator",
-    "apply", "reject", "undo", "validate", "submit",
-]
-
-SYSTEM_PROMPT = """You are a Data-Centric AI agent. Your job is to improve a \
-Machine learning dataset so a fixed classifier achieves higher accuracy.
-
-STRATEGY — use this order:
-1. query_analyst to get a prioritised action plan (costs 1 budget, worth it)
-2. inspect_dataset to understand the data
-3. query the recommended specialist (query_cleaner, query_augmenter, query_balancer)
-4. apply the best recommendation by number (e.g. apply 1)
-5. validate to check if accuracy improved
-6. repeat until you hit the target or run low on budget
-7. submit to finalize
-
-IMPORTANT RULES:
-- Start with query_analyst — it tells you the biggest problem to fix first.
-- Always query a specialist before applying. Never apply without querying first.
-- Check the Agreement signal after validate: DISAGREE means possible overfitting.
-- Validate after every 2-3 applies to track progress.
-- Do not spam validate — it costs budget after 3 uses.
-- query_validator costs 2 budget — use only when suspicious of data quality.
-- submit when accuracy >= target or budget < 5.
-
-Reply with exactly ONE command per message. No explanation. Just the command."""
-
-
-def build_user_prompt(obs: dict) -> str:
-    improvement_needed = obs.get("target_accuracy", 0) - obs.get("current_accuracy", 0)
-    return (
-        f"Current situation:\n"
-        f"Accuracy: {obs.get('current_accuracy', 0):.1%} → "
-        f"Target: {obs.get('target_accuracy', 0):.1%}\n"
-        f"Still need: {max(0, improvement_needed):.1%} improvement\n"
-        f"Quality score: {obs.get('estimated_quality', 0):.2f}/1.00\n"
-        f"Rows preserved: {obs.get('rows_preserved_pct', 1.0):.1%}\n"
-        f"Budget remaining: {obs.get('budget_remaining', 0)} steps\n"
-        f"Free validates left: {obs.get('validate_calls_remaining', 0)}\n"
-        f"Active query session: {obs.get('active_session', 'none')}\n\n"
-        f"Last result:\n{str(obs.get('response', ''))[:400]}\n\n"
-        f"What is your next action? (one command only)"
-    )
 
 
 # ════════════════════════════════════════════════════════
 # SERVER MANAGEMENT
 # ════════════════════════════════════════════════════════
-
-def start_server() -> subprocess.Popen:
-    """Start the environment server as a subprocess."""
-    proc = subprocess.Popen(
-        ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    # Poll until ready (max 30 seconds)
-    for i in range(30):
-        try:
-            r = requests.get(f"{BASE_URL}/health", timeout=1)
-            if r.status_code == 200:
-                print(f"Server ready after {i + 1}s")
-                return proc
-        except Exception:
-            pass
-        time.sleep(1)
-    proc.terminate()
-    raise RuntimeError("Environment server failed to start in 30 seconds")
-
-
-def stop_server(proc: subprocess.Popen):
-    proc.terminate()  # cross-platform (SIGTERM on Linux, TerminateProcess on Windows)
-    proc.wait()
-    print("Server stopped.")
 
 
 # ════════════════════════════════════════════════════════
@@ -279,7 +212,6 @@ class CurriculumScheduler:
     # Backward-compat: record_improvement still works for old callers
     def record_improvement(self, improvement: float):
         self.record_episode(reached_target=(improvement > 0.05))
-        self.global_step = self.global_step  # already incremented above
 
 
 
@@ -295,54 +227,31 @@ def compute_rewards(
     action_history: list,
 ) -> dict:
     """
-    4 completely independent reward components.
-    Each measures a different aspect of agent behavior.
-    No single component can be maximized without solving the real task.
+    Two independent reward components.
+
+    env_reward    — the full graded reward from the environment (accuracy +
+                    process + preservation + step). Do NOT re-implement those
+                    here; they are already inside obs_after["reward"].
+    format_reward — the only signal invisible to the environment: whether the
+                    LLM actually output a valid command string.
     """
-    # Component 1: Environment accuracy reward (from environment)
+    # Component 1: environment reward (already includes accuracy, process,
+    # preservation, and step reward — do not duplicate any of those here)
     env_reward = obs_after.get("reward", 0.0)
 
-    # Component 2: Format reward — did model output a valid command?
+    # Component 2: format reward — did the model emit a valid command?
+    # This is the ONLY signal the environment cannot see.
     is_valid = any(
         response_text.strip().startswith(cmd) for cmd in VALID_COMMANDS
     )
     format_reward = 0.10 if is_valid else -0.10
 
-    # Component 3: Strategy reward — did model follow smart workflow?
-    strategy_reward = 0.0
-    if len(action_history) >= 1:
-        prev = action_history[-1]
-        curr = response_text.strip()
-
-        if prev.startswith("query_") and curr.startswith("apply"):
-            strategy_reward = 0.05   # query then apply — correct pattern
-        elif curr.startswith("apply") and not any(
-            a.startswith("query_") for a in action_history[-3:]
-        ):
-            strategy_reward = -0.04  # apply without recent query — bad pattern
-        elif prev.startswith("apply") and curr == "validate":
-            strategy_reward = 0.03   # validate after apply — good pattern
-        elif curr == "submit" and not any(
-            a == "validate" for a in action_history
-        ):
-            strategy_reward = -0.10  # submit without ever validating — bad
-
-    # Component 4: Preservation reward — did model lose good data?
-    rows_pct = obs_after.get("rows_preserved_pct", 1.0)
-    if rows_pct >= 0.90:   preservation_reward = 0.05
-    elif rows_pct >= 0.80: preservation_reward = 0.02
-    elif rows_pct >= 0.70: preservation_reward = 0.00
-    elif rows_pct >= 0.50: preservation_reward = -0.10
-    else:                  preservation_reward = -0.40
-
-    total = env_reward + format_reward + strategy_reward + preservation_reward
+    total = env_reward + format_reward
 
     return {
-        "total":        total,
-        "env":          env_reward,
-        "format":       format_reward,
-        "strategy":     strategy_reward,
-        "preservation": preservation_reward,
+        "total":   total,
+        "env":     env_reward,
+        "format":  format_reward,
     }
 
 
@@ -452,11 +361,8 @@ def log_training_step(
 ):
     """Log metrics and sample generations every 10 steps."""
     all_final_rewards = []
-    all_reward_components: dict = {
-        "env": [], "format": [], "strategy": [], "preservation": []
-    }
+    all_reward_components: dict = {"env": [], "format": []}
     format_hits = 0
-    strategy_hits = 0
     total_actions = 0
 
     for prompts, responses, rewards in all_episodes:
@@ -466,24 +372,21 @@ def log_training_step(
         for r in rewards:
             for k in all_reward_components:
                 all_reward_components[k].append(r[k])
-            if r["format"] > 0:   format_hits += 1
-            if r["strategy"] > 0: strategy_hits += 1
+            if r["format"] > 0:
+                format_hits += 1
             total_actions += 1
 
     if not all_final_rewards:
         return
 
     entry = {
-        "step":                  step,
-        "stage":                 scheduler.stage_label(),
-        "task":                  scheduler.get_task(),
-        "mean_total_reward":     mean(all_final_rewards),
-        "mean_env_reward":       mean(all_reward_components["env"]),
-        "mean_format_reward":    mean(all_reward_components["format"]),
-        "mean_strategy_reward":  mean(all_reward_components["strategy"]),
-        "mean_preservation_reward": mean(all_reward_components["preservation"]),
-        "format_rate":           format_hits / max(total_actions, 1),
-        "strategy_rate":         strategy_hits / max(total_actions, 1),
+        "step":               step,
+        "stage":              scheduler.stage_label(),
+        "task":               scheduler.get_task(),
+        "mean_total_reward":  mean(all_final_rewards),
+        "mean_env_reward":    mean(all_reward_components["env"]),
+        "mean_format_reward": mean(all_reward_components["format"]),
+        "format_rate":        format_hits / max(total_actions, 1),
     }
     training_log.append(entry)
     json.dump(training_log, open("training_log.json", "w"), indent=2)
@@ -491,8 +394,7 @@ def log_training_step(
     print(
         f"Step {step:4d} | Stage: {entry['stage']:8s} | "
         f"Reward: {entry['mean_total_reward']:+.3f} | "
-        f"Format: {entry['format_rate']:.0%} | "
-        f"Strategy: {entry['strategy_rate']:.0%}"
+        f"Format: {entry['format_rate']:.0%}"
     )
 
     # Sample 3 generations for inspection

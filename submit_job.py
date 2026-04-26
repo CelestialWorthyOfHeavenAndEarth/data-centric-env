@@ -1,44 +1,50 @@
 """
-Run this locally to submit the training job to HF infrastructure.
-Cost: T4 small = $0.40/hr × ~5 hrs ≈ $2-3 out of your $30 credits.
+Submit the Data-Centric AI training job to HF infrastructure.
+
+Cost: T4 small = $0.40/hr × ~5 hrs ≈ $2-3 from your $30 credits.
 
 Usage:
-    pip install huggingface_hub
+    set HF_TOKEN=hf_yourtoken   (Windows)
     python submit_job.py
 """
-import os
+import os, sys
 from huggingface_hub import HfApi
 
-# Get token from env var or prompt
 TOKEN = os.environ.get("HF_TOKEN") or input("Enter your HF token (hf_...): ").strip()
 
-ENV_URL   = "https://aswini-kumar-data-centric-env.hf.space"
-CODE_REPO = "Aswini-Kumar/data-centric-env"
+# The Docker image built by your HF Space
+SPACE_IMAGE  = "registry.hf.space/aswini-kumar/data-centric-env:latest"
+ENV_URL      = "https://aswini-kumar-data-centric-env.hf.space"
 
 api = HfApi(token=TOKEN)
 
 print("Submitting HF training job...")
-print(f"  Code repo : {CODE_REPO}")
-print(f"  Env URL   : {ENV_URL}")
-print(f"  Hardware  : gpu-t4-small (~$0.40/hr)")
+print(f"  Docker image: {SPACE_IMAGE}")
+print(f"  ENV_URL     : {ENV_URL}")
+print(f"  Hardware    : gpu-t4-small (~$0.40/hr)")
 
 job = api.run_job(
-    repo_id=CODE_REPO,
-    repo_type="space",
-    command="python hf_job_train.py",
-    environment={
+    image=SPACE_IMAGE,
+    command=[
+        "bash", "-c",
+        # Install GPU deps first (not in base image), then train
+        "pip install -q 'unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git' "
+        "trl>=0.15.0 datasets>=2.0.0 transformers>=4.40.0 accelerate>=0.30.0 matplotlib && "
+        "python hf_job_train.py"
+    ],
+    env={
         "ENV_URL":  ENV_URL,
         "HF_TOKEN": TOKEN,
     },
-    hardware="gpu-t4-small",
+    flavor="t4-small",
 )
 
-print(f"\nJob submitted!")
-print(f"Job ID  : {job.job_id}")
-print(f"Monitor : https://huggingface.co/settings/jobs/{job.job_id}")
-print(f"\nWhen DONE (~5 hrs), pull results:")
+print(f"\n✅ Job submitted!")
+print(f"   Job ID  : {job.id}")
+print(f"   Status  : {job.status}")
+print(f"   Monitor : https://huggingface.co/settings/jobs")
+print(f"\nWhen DONE (~5 hrs), run:")
 print(f"  git pull hf main")
 print(f"  git add plots/ logs/")
 print(f'  git commit -m "Add training results"')
-print(f"  git push origin main")
-print(f"  git push hf main")
+print(f"  git push origin main && git push hf main")

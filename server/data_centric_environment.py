@@ -66,11 +66,11 @@ logger = logging.getLogger(__name__)
 AVAILABLE_COMMANDS = """Available commands:
   inspect_dataset          — shape, dtypes, missing, class distribution
   inspect_model            — accuracy (RF + LR), F1, feature importance
-  query_analyst            — holistic diagnosis + prioritised action plan (costs 1 budget)
+  query_analyst            — holistic diagnosis + prioritised action plan (costs 2 budget total)
   query_cleaner            — get cleaning recommendations
   query_augmenter [class]  — get augmentation suggestions
   query_balancer           — get resampling recommendations
-  query_validator          — check rule violations (costs 2 budget)
+  query_validator          — check rule violations (costs 2 budget total)
   apply [id]               — apply recommendation by ID
   reject [id]              — reject a recommendation
   undo                     — revert last apply (max 3 levels)
@@ -157,7 +157,7 @@ class DataCentricEnvironment(Environment):
             step_number=0,
             max_steps=cfg["budget"],
             active_session="none",
-            validate_calls_remaining=3,
+            validate_calls_remaining=validate_calls_remaining(self._exploit),
             done=False,
             reward=0.0,
         )
@@ -330,7 +330,7 @@ class DataCentricEnvironment(Environment):
         return self._make_obs(response, step, budget, reward)
 
     def _cmd_query_analyst(self, step, budget, r_process, trunc_pen) -> DataCentricObservation:
-        """Holistic diagnosis + prioritised action plan. Costs 1 budget."""
+        """Holistic diagnosis + prioritised action plan. Costs 2 budget total (1 cmd step + 1 internal)."""
         # Costs 1 extra budget step
         self._state.step_count += 1
         plan = self._analyst.query(

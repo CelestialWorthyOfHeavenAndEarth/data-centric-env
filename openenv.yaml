@@ -20,6 +20,7 @@ tasks:
     description: >
       Single-issue tutorial. 100 rows, binary classification, 4 features.
       Only issue: 15-30% missing values. Baseline ~0.62, target 0.73. Budget: 30 steps.
+      Note: query_analyst costs 2 budget total (1 cmd step + 1 internal); query_validator also costs 2 total.
   - name: task_1_easy
     description: >
       Two issues: missing values (8-25%) + mild class imbalance (5-20%).

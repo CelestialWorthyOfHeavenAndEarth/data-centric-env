@@ -107,20 +107,20 @@ ERROR_OBS_TEMPLATES = [
 RESET_OBS = (
     "Episode started: {task}\n"
     "Baseline accuracy: {baseline:.4f} | Target: {target:.4f}\n"
-    "Dataset: {rows} rows x {cols} features\n"
+    "Dataset: {rows} rows \u00d7 {cols} features\n"
     "Budget: {budget} steps\n\n"
     "Available commands:\n"
-    "  inspect_dataset          - shape, dtypes, missing, class distribution\n"
-    "  inspect_model            - accuracy (RF + LR), F1, feature importance\n"
-    "  query_analyst            - holistic diagnosis + prioritised action plan (costs 1 budget)\n"
-    "  query_cleaner            - get cleaning recommendations\n"
-    "  query_augmenter [class]  - get augmentation suggestions\n"
-    "  query_balancer           - get resampling recommendations\n"
-    "  query_validator          - check rule violations (costs 2 budget)\n"
-    "  apply [id]               - apply recommendation by ID\n"
-    "  reject [id]              - reject a recommendation\n"
-    "  validate                 - retrain and score (cooldown applies)\n"
-    "  submit                   - finalize episode"
+    "  inspect_dataset          \u2014 shape, dtypes, missing, class distribution\n"
+    "  inspect_model            \u2014 accuracy (RF + LR), F1, feature importance\n"
+    "  query_analyst            \u2014 holistic diagnosis + prioritised action plan (costs 2 budget total)\n"
+    "  query_cleaner            \u2014 get cleaning recommendations\n"
+    "  query_augmenter [class]  \u2014 get augmentation suggestions\n"
+    "  query_balancer           \u2014 get resampling recommendations\n"
+    "  query_validator          \u2014 check rule violations (costs 2 budget total)\n"
+    "  apply [id]               \u2014 apply recommendation by ID\n"
+    "  reject [id]              \u2014 reject a recommendation\n"
+    "  validate                 \u2014 retrain and score (cooldown applies)\n"
+    "  submit                   \u2014 finalize episode"
 )
 
 ANALYST_OBS_TEMPLATES = [
@@ -270,7 +270,7 @@ def build_episode(task: str, seed: int, strategy: list) -> list:
                 lr_acc = round(min(1.0, acc + rng.uniform(-0.03, 0.03)), 4)
                 validate_left -= 1
                 t = rng.choice(VALIDATE_OBS_TEMPLATES)
-                status = "HIT v" if acc >= p["target"] else "Not yet"
+                status = "HIT \u2713" if acc >= p["target"] else "Not yet"
                 pv = round(rng.uniform(0.75, 0.98), 3)
                 rv = round(rng.uniform(0.75, 0.98), 3)
                 prev_obs = t.format(
