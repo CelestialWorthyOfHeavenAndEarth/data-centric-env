@@ -120,16 +120,18 @@ def run_sft_warmup(model, tokenizer):
         train_dataset=sft_dataset,
         args=SFTConfig(
             output_dir="./sft-checkpoint",
-            num_train_epochs=1,
-            per_device_train_batch_size=8,   # 1.5B fits larger batch in T4
-            gradient_accumulation_steps=2,   # was 4 — faster
+            # Cap at 200 steps — enough to learn command syntax, no need for full epoch
+            # Full 9480-example epoch at 0.07 it/s = 2+ hrs. 200 steps = ~8 min.
+            max_steps=200,
+            per_device_train_batch_size=4,   # smaller = faster step time on T4
+            gradient_accumulation_steps=2,   # effective batch = 8
             learning_rate=2e-5,
             warmup_steps=5,
-            logging_steps=5,
+            logging_steps=10,
             save_strategy="no",
             report_to="tensorboard",
             logging_dir="./logs/sft",
-            max_seq_length=MAX_SEQ_LENGTH,
+            max_seq_length=256,              # commands are short; 256 >> needed
         ),
     )
     sft_trainer.train()
