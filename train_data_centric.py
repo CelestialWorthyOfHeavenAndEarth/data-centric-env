@@ -28,17 +28,17 @@ from agent_utils import (
 )
 
 # ════════════════════════════════════════════════════════
-# CONSTANTS
+# CONSTANTS — tuned for fast iteration on T4 (16GB)
 # ════════════════════════════════════════════════════════
 
 # ENV_URL: set this to your HF Space URL when running as an HF Job
-# e.g. export ENV_URL="https://aswini-kumar-data-centric-env.hf.space"
-BASE_URL = os.environ.get("ENV_URL", "http://localhost:8000")
-MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
-MAX_SEQ_LENGTH = 1024
-LOAD_IN_4BIT = True
+BASE_URL       = os.environ.get("ENV_URL", "http://localhost:8000")
 
-
+# Model: 1.5B trains ~3x faster than 3B, fits easily in T4, still very capable
+# Override via: export MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
+MODEL_NAME     = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-1.5B-Instruct")
+MAX_SEQ_LENGTH = 512    # commands are short; 512 is plenty and saves VRAM
+LOAD_IN_4BIT   = True   # QLoRA — mandatory for T4
 
 # ════════════════════════════════════════════════════════
 # SERVER MANAGEMENT
@@ -49,23 +49,29 @@ LOAD_IN_4BIT = True
 # MODEL SETUP
 # ════════════════════════════════════════════════════════
 
-def load_model():
+def load_model(model_name: str = None):
+    """Load model with QLoRA — tuned for T4 (16 GB VRAM)."""
+    name = model_name or MODEL_NAME
+    print(f"[Model] Loading {name} (4-bit QLoRA)")
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=MODEL_NAME,
+        model_name=name,
         max_seq_length=MAX_SEQ_LENGTH,
         load_in_4bit=LOAD_IN_4BIT,
         dtype=None,
     )
     model = FastLanguageModel.get_peft_model(
         model,
-        r=16,
+        r=8,                # Reduced from 16 — sufficient for short command vocab
         target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
-        lora_alpha=32,
-        lora_dropout=0,
+        lora_alpha=16,      # = r, standard rule-of-thumb
+        lora_dropout=0,     # 0 is faster and equally effective with Unsloth
         bias="none",
         use_gradient_checkpointing="unsloth",
         random_state=42,
     )
+    import torch
+    vram_used = torch.cuda.memory_allocated() / 1e9 if torch.cuda.is_available() else 0
+    print(f"[Model] VRAM used: {vram_used:.1f} GB")
     return model, tokenizer
 
 
@@ -116,13 +122,13 @@ def run_sft_warmup(model, tokenizer):
         args=SFTConfig(
             output_dir="./sft-checkpoint",
             num_train_epochs=1,
-            per_device_train_batch_size=4,
-            gradient_accumulation_steps=4,
+            per_device_train_batch_size=8,   # 1.5B fits larger batch in T4
+            gradient_accumulation_steps=2,   # was 4 — faster
             learning_rate=2e-5,
-            warmup_steps=10,
+            warmup_steps=5,
             logging_steps=5,
             save_strategy="no",
-            report_to="tensorboard",    # experiment tracking via TensorBoard
+            report_to="tensorboard",
             logging_dir="./logs/sft",
             max_seq_length=MAX_SEQ_LENGTH,
         ),
@@ -453,17 +459,21 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None):
 
     grpo_config = GRPOConfig(
         output_dir="./data-centric-checkpoints",
+        # ── Iteration speed config (winning tip: iterate fast on small model) ──
+        per_device_train_batch_size=2,   # was 4 — saves VRAM on T4
+        gradient_accumulation_steps=2,   # was 4 — 2x faster steps
+        num_generations=2,               # was 4 — 2x fewer rollouts per step
+        max_completion_length=30,        # commands are ≤ 20 chars; was 50
+        max_prompt_length=400,           # trimmed; was 900
+        # ── Learning rate schedule ──────────────────────────────────────────
         num_train_epochs=3,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
         learning_rate=5e-6,
-        warmup_steps=20,
-        logging_steps=10,
-        save_steps=50,
-        num_generations=4,
-        max_completion_length=50,   # renamed from max_new_tokens in TRL ≥0.15
-        max_prompt_length=900,
-        report_to="tensorboard",    # experiment tracking via TensorBoard
+        warmup_steps=10,                 # was 20 — faster warmup
+        # ── Logging / checkpointing ─────────────────────────────────────────
+        logging_steps=5,                 # was 10 — more frequent logs
+        save_steps=25,                   # was 50 — checkpoint more often
+        # ── Experiment tracking ─────────────────────────────────────────────
+        report_to="tensorboard",
         logging_dir="./logs/grpo",
     )
 
