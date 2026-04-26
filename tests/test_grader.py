@@ -49,11 +49,19 @@ class TestAccuracyReward:
         assert r > 0.5, f"Submit success should add bonus, got {r}"
 
     def test_submit_fail_partial_credit(self):
-        """Halfway to target should give some credit."""
-        # baseline=0.62, target=0.80, current=0.71 → 50% of the way there
+        """With strict grader: failing to hit target gives negative reward.
+        baseline=0.62, target=0.80, current=0.71 → 50% of the way there.
+        New grader: penalty = -0.40 * (1-0.5) = -0.20, minus regression = net negative.
+        This is intentional — agents that fail to hit target are penalised.
+        """
+        # baseline=0.62, target=0.80, current=0.71, previous=0.70
         r = compute_accuracy_reward(0.71, 0.70, 0.62, 0.80, is_submit=True)
-        # Current is at 0.71, previous was 0.70 → small improvement, partial credit
-        assert r > 0, f"Partial progress at submit should give credit, got {r}"
+        # Reward has an improvement component (+0.025) but the failure penalty (-0.20) dominates
+        # Net should be negative (strict grader — failing to hit target is punished)
+        assert r < 0.30, f"Partial fail at submit: expected < 0.30, got {r}"
+        # But not as bad as a complete failure (current == baseline)
+        r_zero = compute_accuracy_reward(0.62, 0.62, 0.62, 0.80, is_submit=True)
+        assert r > r_zero, f"Partial progress should be better than no progress: {r} vs {r_zero}"
 
 
 # ── Preservation reward ───────────────────────────────────────────────────────

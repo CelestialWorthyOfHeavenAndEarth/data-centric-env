@@ -102,3 +102,7 @@ class DataCentricObservation(Observation):
         default=0.0,
         description="Reward for this step",
     )
+    metadata: dict = Field(
+        default_factory=dict,
+        description="Optional extra metadata (e.g. debug info from server)",
+    )

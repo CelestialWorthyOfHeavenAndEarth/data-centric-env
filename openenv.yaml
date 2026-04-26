@@ -38,11 +38,11 @@ tasks:
 action_type: text
 observation_type: structured
 
-# Reward components:
-#   accuracy_reward:    [-1.0, +1.0] — accuracy delta × 2.5, submit bonus +0.50
-#   process_reward:     [-0.10, +0.05] — workflow pattern scoring
-#   preservation_reward:[-0.40, +0.05] — row preservation incentive
-#   efficiency_reward:  [-0.05, +0.20] — at submit only
-#   step_reward:        [-0.30, +0.15] — proxy quality delta per apply
+# Reward components (v2 — strict discrimination design):
+#   accuracy_reward:    [-1.0, +0.80] — Δacc×2.5 mid-ep; submit: base+efficiency×budget_fraction+stretch
+#   process_reward:     [-0.20, +0.13] — strict workflow enforcement (blind apply=-0.08, etc.)
+#   preservation_reward:[-0.50, +0.05] — row preservation ≥92% required for bonus
+#   efficiency_reward:  [-0.10, +0.25] — at submit only; accuracy_gain/budget_used × 3.0
+#   step_reward:        [-0.30, +0.15] — proxy quality delta per apply (no classifier)
 # Total clamped to [-1.0, 1.0] by compute_total_reward()
 reward_range: [-1.0, 1.0]

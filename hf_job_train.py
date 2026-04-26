@@ -70,7 +70,7 @@ print(f"[Job] SFT data: {count} examples")
 # ── 4. Train ──────────────────────────────────────────────────────────────────
 from train_data_centric import load_model, run_sft_warmup, run_grpo_training, save_model
 
-print("\n[Job] Loading Qwen2.5-3B-Instruct (4-bit)...")
+print(f"[Job] Loading {os.environ.get('MODEL_NAME', 'Qwen/Qwen2.5-1.5B-Instruct')} (4-bit QLoRA)...")
 model, tokenizer = load_model()
 
 print("\n[Job] Phase 1 — SFT warmup...")

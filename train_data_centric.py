@@ -69,7 +69,6 @@ def load_model(model_name: str = None):
         use_gradient_checkpointing="unsloth",
         random_state=42,
     )
-    import torch
     vram_used = torch.cuda.memory_allocated() / 1e9 if torch.cuda.is_available() else 0
     print(f"[Model] VRAM used: {vram_used:.1f} GB")
     return model, tokenizer
@@ -397,7 +396,11 @@ def log_training_step(
         "format_rate":        format_hits / max(total_actions, 1),
     }
     training_log.append(entry)
-    json.dump(training_log, open("training_log.json", "w"), indent=2)
+    # Also write to logs/ directory in JSONL format for compatibility
+    import os as _os
+    _os.makedirs("logs", exist_ok=True)
+    with open("logs/step_log.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
 
     print(
         f"Step {step:4d} | Stage: {entry['stage']:8s} | "
