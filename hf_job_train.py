@@ -2,34 +2,51 @@
 """
 HF Jobs training script for Data-Centric AI Agent.
 
-Submit via:
-    python submit_job.py
+This script runs INSIDE a HuggingFace Job container.
+Submit it via: python submit_job.py
 
-Required secrets in HF Job:
+NOTE: The Colab notebook is the recommended training path for judges:
+  https://colab.research.google.com/github/CelestialWorthyOfHeavenAndEarth/data-centric-env/blob/main/train_colab.ipynb
+
+Required env vars in HF Job:
     HF_TOKEN  - HuggingFace write token
     ENV_URL   - HF Space URL (set automatically by submit_job.py)
 """
 import os, sys, time, glob, subprocess, requests
 
-ENV_URL   = os.environ.get("ENV_URL", "https://aswini-kumar-data-centric-env.hf.space")
-HF_TOKEN  = os.environ.get("HF_TOKEN", "")
+ENV_URL    = os.environ.get("ENV_URL", "https://aswini-kumar-data-centric-env.hf.space")
+HF_TOKEN   = os.environ.get("HF_TOKEN", "")
 SPACE_REPO = "Aswinis-Kumar/data-centric-env"
 
 print(f"[Job] ENV_URL   : {ENV_URL}")
 print(f"[Job] WorkingDir: {os.getcwd()}")
 print(f"[Job] Python    : {sys.version}")
 
-# ── 1. Install dependencies ────────────────────────────────────────────────────
-print("\n[Job] Installing dependencies...")
+# ── 1. Install non-torch deps only (torch/torchao/unsloth from Docker image) ──
+print("\n[Job] Installing env + training deps...")
 subprocess.check_call([
     sys.executable, "-m", "pip", "install", "-q",
-    "torchao==0.6.1",
-    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
-    "trl>=0.15.0", "datasets>=2.0.0", "transformers>=4.40.0",
-    "accelerate>=0.30.0", "openenv-core[core]>=0.2.1",
-    "scikit-learn>=1.3.0", "pandas>=2.0.0", "numpy>=1.24.0",
-    "matplotlib", "huggingface_hub",
+    # Do NOT install torch or torchao here — the Docker image has the right versions
+    "trl>=0.15.0",
+    "datasets>=2.0.0",
+    "transformers>=4.44.0,<4.52.0",   # pin to avoid torchao conflicts
+    "accelerate>=0.30.0",
+    "openenv-core[core]>=0.2.1",
+    "scikit-learn>=1.3.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "matplotlib",
+    "huggingface_hub",
+    "wandb",                           # experiment tracking (required)
 ])
+
+# ── Set up W&B experiment tracking ────────────────────────────────────────────
+os.environ.setdefault("WANDB_PROJECT", "data-centric-ai-agent")
+os.environ.setdefault("WANDB_LOG_MODEL", "false")  # don't upload model artifacts to wandb
+print(f"[Job] W&B project: {os.environ['WANDB_PROJECT']}")
+
+import wandb
+wandb.login(key=HF_TOKEN, relogin=False, anonymous="never")  # HF_TOKEN used if WANDB_API_KEY not set
 
 # ── 2. Verify HF Space is healthy ─────────────────────────────────────────────
 print(f"\n[Job] Waiting for Space at {ENV_URL} ...")
@@ -75,11 +92,12 @@ print("\n[Job] Saving model...")
 save_model(model, tokenizer)
 
 # ── 5. Generate plots ─────────────────────────────────────────────────────────
-print("\n[Job] Generating reward curves...")
-subprocess.check_call([
-    sys.executable, "plot_rewards.py",
-    "--log", "logs/training.jsonl", "--out", "plots/",
-])
+if os.path.exists("logs/training.jsonl"):
+    print("\n[Job] Generating reward curves...")
+    subprocess.check_call([
+        sys.executable, "plot_rewards.py",
+        "--log", "logs/training.jsonl", "--out", "plots/",
+    ])
 
 # ── 6. Push results back to HF Space repo ─────────────────────────────────────
 if not HF_TOKEN:
@@ -90,7 +108,9 @@ print("\n[Job] Pushing plots + log to HF Space repo...")
 from huggingface_hub import HfApi
 api = HfApi(token=HF_TOKEN)
 
-files_to_push = glob.glob("plots/*.png") + ["logs/training.jsonl"]
+files_to_push = glob.glob("plots/*.png") + (
+    ["logs/training.jsonl"] if os.path.exists("logs/training.jsonl") else []
+)
 for fpath in files_to_push:
     if os.path.exists(fpath):
         api.upload_file(

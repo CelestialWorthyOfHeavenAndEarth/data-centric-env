@@ -80,7 +80,32 @@ def run_sft_warmup(model, tokenizer):
     Without this, model outputs gibberish and gets zero reward.
     """
     print("\n=== PHASE 1: SFT WARMUP ===")
-    
+
+    # ── Experiment tracking ───────────────────────────────────────────────────
+    try:
+        import wandb
+        wandb.init(
+            project="data-centric-ai-agent",
+            name="sft-warmup",
+            tags=["sft", "warmup", "qwen2.5-3b", "openenv"],
+            config={
+                "phase":          "sft",
+                "model":          MODEL_NAME,
+                "max_seq_length": MAX_SEQ_LENGTH,
+                "load_in_4bit":   LOAD_IN_4BIT,
+                "epochs":         1,
+                "lr":             2e-5,
+                "batch_size":     4,
+                "grad_accum":     4,
+            },
+            resume="allow",
+        )
+        REPORT_TO = "wandb"
+        print("[W&B] Tracking enabled — SFT warmup")
+    except ImportError:
+        REPORT_TO = "none"
+        print("[W&B] wandb not installed — tracking disabled")
+
     if os.path.exists("./sft-checkpoint"):
         model.load_adapter("./sft-checkpoint")
         print("Loaded existing SFT checkpoint — skipping warmup.")
@@ -120,7 +145,8 @@ def run_sft_warmup(model, tokenizer):
             warmup_steps=10,
             logging_steps=5,
             save_strategy="no",
-            report_to="none",
+            report_to=REPORT_TO,        # wandb if available, else none
+            run_name="sft-warmup",
             max_seq_length=MAX_SEQ_LENGTH,
         ),
     )
@@ -444,6 +470,36 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None):
     if resume_from_checkpoint:
         print(f"Resuming from checkpoint: {resume_from_checkpoint}")
 
+    # ── Experiment tracking ───────────────────────────────────────────────────
+    try:
+        import wandb
+        wandb.init(
+            project="data-centric-ai-agent",
+            name="grpo-training",
+            tags=["grpo", "rl", "qwen2.5-3b", "openenv", "curriculum"],
+            config={
+                "phase":             "grpo",
+                "model":             MODEL_NAME,
+                "algorithm":         "GRPO",
+                "max_seq_length":    MAX_SEQ_LENGTH,
+                "load_in_4bit":      LOAD_IN_4BIT,
+                "epochs":            3,
+                "lr":                5e-6,
+                "batch_size":        4,
+                "grad_accum":        4,
+                "num_generations":   4,
+                "curriculum_window": 30,
+                "curriculum_thresh": 0.60,
+                "env_url":           BASE_URL,
+            },
+            resume="allow",
+        )
+        REPORT_TO = "wandb"
+        print("[W&B] Tracking enabled — GRPO training")
+    except ImportError:
+        REPORT_TO = "none"
+        print("[W&B] wandb not installed — tracking disabled")
+
     scheduler = CurriculumScheduler()
 
     grpo_config = GRPOConfig(
@@ -458,7 +514,8 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None):
         num_generations=4,
         max_completion_length=50,   # renamed from max_new_tokens in TRL ≥0.15
         max_prompt_length=900,
-        report_to="none",
+        report_to=REPORT_TO,        # wandb if available, else none
+        run_name="grpo-training",
     )
 
     def reward_fn(completions, prompts=None, **kwargs):
