@@ -2,7 +2,7 @@
 
 **OpenEnv Hackathon 2026 | Theme #3.1: World Modeling / Professional Tasks**
 
-🤗 [Live Environment](https://huggingface.co/spaces/Aswinis-Kumar/data-centric-env) · 💻 [GitHub](https://github.com/CelestialWorthyOfHeavenAndEarth/data-centric-env) · 📓 [Training Notebook](https://colab.research.google.com/github/CelestialWorthyOfHeavenAndEarth/data-centric-env/blob/main/train_colab.ipynb)
+🤗 [Live Environment](https://huggingface.co/spaces/Aswini-Kumar/data-centric-env) · 💻 [GitHub](https://github.com/CelestialWorthyOfHeavenAndEarth/data-centric-env) · 📓 [Training Notebook](https://colab.research.google.com/github/CelestialWorthyOfHeavenAndEarth/data-centric-env/blob/main/train_colab.ipynb)
 
 ---
 
