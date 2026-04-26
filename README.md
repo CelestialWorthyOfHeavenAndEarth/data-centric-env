@@ -6,6 +6,7 @@ colorTo: indigo
 sdk: docker
 pinned: false
 app_port: 7860
+short_description: An LLM that learns to heal datasets — not model weights. Multi-agent GRPO RL for data-centric AI.
 tags:
   - openenv
   - reinforcement-learning
@@ -17,7 +18,7 @@ tags:
 
 # 🧠 Data-Centric AI — Multi-Agent RL Environment
 
-> **Train an LLM to fix data, not models.** This OpenEnv environment teaches a language model to act as a **data engineering orchestrator** — coordinating specialist sub-agents to clean, augment, and balance ML datasets under a fixed budget, improving a frozen classifier's accuracy purely through data-centric interventions.
+> **What if the model is fine — but the data isn't?** This OpenEnv environment uses **GRPO reinforcement learning** to teach a language model to act as a data surgery orchestrator: dispatching specialist sub-agents to impute, rebalance, and augment a corrupted ML dataset — boosting a *frozen* classifier's accuracy without touching a single model weight.
 
 ---
 
