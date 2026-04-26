@@ -120,10 +120,13 @@ def run_sft_warmup(model, tokenizer):
         train_dataset=sft_dataset,
         args=SFTConfig(
             output_dir="./sft-checkpoint",
-            # Cap at 200 steps — enough to learn command syntax, no need for full epoch
-            # Full 9480-example epoch at 0.07 it/s = 2+ hrs. 200 steps = ~8 min.
+            # WHY max_steps=200:
+            #   Full dataset = 9,480 examples. 1 epoch @ batch=4 = 2,370 steps.
+            #   At ~0.07 it/s on T4 that's 9+ hours just for SFT.
+            #   SFT only teaches command syntax ("apply 1", "validate", etc.)
+            #   200 steps is more than enough for that — real learning is GRPO.
             max_steps=200,
-            per_device_train_batch_size=4,   # smaller = faster step time on T4
+            per_device_train_batch_size=4,   # smaller batch = faster step on T4
             gradient_accumulation_steps=2,   # effective batch = 8
             learning_rate=2e-5,
             warmup_steps=5,
@@ -131,7 +134,10 @@ def run_sft_warmup(model, tokenizer):
             save_strategy="no",
             report_to="tensorboard",
             logging_dir="./logs/sft",
-            max_seq_length=256,              # commands are short; 256 >> needed
+            # WHY seq_length=256:
+            #   Commands are <20 chars. System prompt + user prompt fits in 256.
+            #   512 doubles memory & slows tokenization for zero benefit here.
+            max_seq_length=256,
         ),
     )
     sft_trainer.train()
@@ -471,21 +477,23 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None, max_steps: 
 
     grpo_config = GRPOConfig(
         output_dir="./data-centric-checkpoints",
-        # ── Iteration speed config (winning tip: iterate fast on small model) ──
+        # ── Iteration speed (iterate fast on small model = better results) ──
         per_device_train_batch_size=2,   # saves VRAM on T4
-        gradient_accumulation_steps=2,   # faster steps
-        num_generations=2,               # fewer rollouts per step
-        max_completion_length=30,        # commands are short (≤ 20 chars)
+        gradient_accumulation_steps=2,   # effective batch = 4
+        num_generations=2,               # rollouts per step
+        max_completion_length=30,        # commands are short (<= 20 chars)
         max_prompt_length=400,
-        # ── Steps / epochs ──────────────────────────────────────────────────
-        num_train_epochs=3,
-        max_steps=max_steps,             # -1 = disabled; >0 = hard cap for demos
+        # ── Steps ────────────────────────────────────────────────────────────
+        # 200 steps @ ~15s/step = ~50 min — enough for clear reward curves.
+        # GRPO learns from env reward signals, not dataset size, so this is fine.
+        # num_train_epochs is ignored when max_steps > 0.
+        max_steps=200 if max_steps <= 0 else max_steps,
         learning_rate=5e-6,
         warmup_steps=10,
-        # ── Logging / checkpointing ─────────────────────────────────────────
+        # ── Logging / checkpointing ──────────────────────────────────────────
         logging_steps=5,
-        save_steps=25,
-        # ── Experiment tracking ─────────────────────────────────────────────
+        save_steps=50,
+        # ── Experiment tracking ──────────────────────────────────────────────
         report_to="tensorboard",
         logging_dir="./logs/grpo",
     )
@@ -546,11 +554,18 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None, max_steps: 
 
         return batch_rewards
 
-    # GRPOTrainer needs a prompt dataset — use SFT data as source
+    # WHY dataset capped at 500 (from 9,480):
+    #   GRPO doesn't train on dataset examples — it uses them as prompt seeds.
+    #   The model generates a response, sends it to the LIVE environment,
+    #   gets a reward back, and learns from that reward signal.
+    #   500 diverse prompts is more than enough seed variety.
+    #   max_steps=200 caps training anyway, so 8,980 extra rows would never be used.
     raw = [json.loads(l) for l in open("sft_data.jsonl", encoding="utf-8")]
+    random.shuffle(raw)   # shuffle so 500 sample is diverse, not all task_0
     grpo_dataset = Dataset.from_list([
-        {"prompt": ex["prompt"]} for ex in raw
+        {"prompt": ex["prompt"]} for ex in raw[:500]
     ])
+    print(f"[GRPO] Using {len(grpo_dataset)} prompt seeds (9,480 capped to 500 — max_steps=200 caps training)")
 
     trainer = GRPOTrainer(
         model=model,
