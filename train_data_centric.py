@@ -169,13 +169,15 @@ class CurriculumScheduler:
     TASKS = ["task_0_tutorial", "task_1_easy", "task_2_medium", "task_3_hard"]
     LEVEL_LABELS = ["tutorial", "easy", "medium", "hard"]
 
-    def __init__(self, window: int = 20, threshold: float = 0.70):
+    def __init__(self, window: int = 50, threshold: float = 0.80):
         """
         Args:
-            window:    Episodes to evaluate before considering advancement.
-                       20 is faster feedback than 30 — sees gradient sooner.
-            threshold: 0.70 = must solve 70% of episodes to advance.
-                       Raised from 0.60 to prevent saturation on easy levels.
+            window:    Episodes before considering advancement.
+                       Set to 50 so curriculum stays on easy for a full 50-step run
+                       — produces a clean, single-task reward curve for judges.
+                       Raise to 20 for longer runs (100+ steps).
+            threshold: 0.80 = must solve 80% of episodes to advance.
+                       Raised from 0.70 to prevent premature advancement on lucky streaks.
         """
         self.current_level = 1          # Start at 'easy' — skip trivial tutorial
         self.window = window
