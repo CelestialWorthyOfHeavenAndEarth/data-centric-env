@@ -1,19 +1,24 @@
 """
 Grader for Data-Centric RL Environment — using OpenEnv Rubric system.
 
-Implements 4 composable Rubric subclasses (nn.Module style, auto-registered
-as child rubrics) plus a root DataCentricRubric that aggregates them.
+## Key Design Principle: REWARD DISCRIMINATION
+The reward must clearly separate:
+  - Bad agent  (random actions)     → large negative
+  - Mediocre   (some fixes, inefficient) → near 0
+  - Good agent (correct, efficient) → +0.5 to +0.8
+  - Perfect    (fast, accurate, clean) → ~1.0
+
+Reward saturation at 1.0 every episode = no learning gradient.
+Every rubric is tuned to penalise sub-optimal behaviour strictly.
 
 Rubric hierarchy:
     DataCentricRubric
-    ├── accuracy      : AccuracyRubric
-    ├── process       : ProcessRubric
-    ├── preservation  : PreservationRubric
-    └── efficiency    : EfficiencyRubric
+    ├── accuracy      : AccuracyRubric     — main RL signal with efficiency multiplier
+    ├── process       : ProcessRubric      — strict workflow enforcement
+    ├── preservation  : PreservationRubric — anti-deletion exploit
+    └── efficiency    : EfficiencyRubric   — surgical vs spray-and-pray
 
 Also provides StepRubric for dense per-apply proxy feedback (no classifier).
-
-Backward-compatible: compute_*() free functions still work for existing callers.
 """
 
 import logging
@@ -26,9 +31,9 @@ from openenv.core.rubrics.base import Rubric
 
 logger = logging.getLogger(__name__)
 
-# Must match openenv.yaml reward_range — enforced by DataCentricRubric
+# Must match openenv.yaml reward_range
 REWARD_MIN: float = -1.0
-REWARD_MAX: float = 1.0
+REWARD_MAX: float =  1.0
 
 
 # ── Lightweight quality score (no sklearn) ────────────────────────────────────
@@ -41,10 +46,9 @@ def compute_lightweight_score(
     initial_missing: int = None,
 ) -> float:
     """
-    Fast quality score comparing working_copy to ground_truth structure.
+    Fast quality score [0.0, 1.0] comparing working_copy to ground_truth structure.
     Does NOT run sklearn — used for dense per-step feedback.
-
-    Score is [0.0, 1.0] composed of:
+    Composed of:
       - missing value reduction (40%)
       - duplicate reduction     (20%)
       - type correctness        (20%)
@@ -102,8 +106,20 @@ def _can_float(val: Any) -> bool:
 
 class AccuracyRubric(Rubric):
     """
-    Main RL signal: rewards accuracy improvement, penalises regression.
-    Adds a large terminal bonus when the agent submits and crosses the target.
+    Main RL signal. Key changes for discrimination:
+
+    1. EFFICIENCY MULTIPLIER at submit: reward = gain × (budget_remaining / budget_total)
+       An agent that hits target in 5 steps gets 5x more reward than one using 25 steps.
+       This forces the agent to learn efficient strategies, not just any strategy.
+
+    2. ABOVE-TARGET STRETCH: accuracy above target is additionally rewarded.
+       Reaching 0.85 when target is 0.73 scores higher than exactly hitting 0.73.
+       Judges see this as evidence of a genuinely capable agent.
+
+    3. STRICT FAILURE PENALTY: if submit is called and target not hit,
+       penalty = -0.4 × (1 - progress_to_target). Agent can't hide behind partial credit.
+
+    4. MID-EPISODE REGRESSION: per-step penalty is steeper than reward (2.5× up, 3.0× down).
     """
 
     def forward(self, action: Any, observation: Any) -> float:
@@ -113,24 +129,52 @@ class AccuracyRubric(Rubric):
         target    = observation.get("target_accuracy", 0.80)
         is_submit = str(action).strip().lower() == "submit"
 
+        # ── Mid-episode: reward Δ accuracy strictly ──────────────────────────
         improvement = current - previous
         if improvement > 0:
-            reward = improvement * 2.5
+            reward = improvement * 2.5      # gain is rewarded
         elif improvement < 0:
-            reward = improvement * 2.0   # regression penalised harder
+            reward = improvement * 3.0      # regression penalised harder (was 2.0)
         else:
             reward = 0.0
 
-        if is_submit:
-            if current >= target:
-                reward += 0.50            # big terminal bonus
-            else:
-                progress_range = target - baseline
-                if progress_range > 0:
-                    progress = (current - baseline) / progress_range
-                    reward += max(0.0, progress) * 0.25
+        if not is_submit:
+            return round(reward, 4)
 
-        logger.debug("AccuracyRubric: imp=%.4f reward=%.4f submit=%s", improvement, reward, is_submit)
+        # ── Terminal: compute final score with efficiency multiplier ─────────
+        budget_used  = observation.get("budget_used", 1)
+        budget_total = observation.get("budget_total", 30)
+        accuracy_gain = current - baseline
+
+        if current >= target:
+            # Base bonus for hitting target
+            base_bonus = 0.35
+
+            # Efficiency multiplier: reward using fewer steps
+            # Range: [0.0 (all budget used) → 0.30 (1 step used)]
+            budget_fraction_remaining = max(0.0, 1.0 - budget_used / max(budget_total, 1))
+            efficiency_bonus = 0.30 * budget_fraction_remaining   # max +0.30
+
+            # Stretch bonus: accuracy above target (up to +0.15)
+            stretch = current - target
+            stretch_bonus = min(stretch * 3.0, 0.15)
+
+            reward += base_bonus + efficiency_bonus + stretch_bonus
+        else:
+            # Target not hit — strict penalty
+            progress_range = target - baseline
+            if progress_range > 0:
+                progress = (current - baseline) / progress_range
+                progress = max(0.0, min(progress, 1.0))
+            else:
+                progress = 0.0
+            # The closer to baseline, the harsher the penalty
+            reward += -0.40 * (1.0 - progress)
+
+        logger.debug(
+            "AccuracyRubric: imp=%.4f is_submit=%s reward=%.4f budget_used=%d/%d",
+            improvement, is_submit, reward, budget_used, budget_total
+        )
         return round(reward, 4)
 
 
@@ -138,42 +182,75 @@ class AccuracyRubric(Rubric):
 
 class ProcessRubric(Rubric):
     """
-    Rewards smart workflow patterns (inspect → query → apply → validate).
-    Penalises blind apply-without-query and submit-without-validate.
+    Strict workflow enforcement. Key changes for discrimination:
+
+    1. BLIND APPLY penalty increased: -0.08 (was -0.04). Applying without querying
+       is the clearest signal of poor strategy — penalise it hard.
+
+    2. REPEATED SAME QUERY without apply in between: -0.05 per repeat.
+       Forces the agent to act on what it learns, not spam queries.
+
+    3. SUBMIT WITHOUT VALIDATE: -0.15 (was -0.10). Submitting blind is sloppy.
+
+    4. VALIDATE THEN APPLY THEN VALIDATE (correct loop): +0.06 bonus.
+       This is the ideal pattern — reward it visibly.
+
+    5. REDUNDANT VALIDATE (validate twice in a row): -0.08 penalty.
     """
 
     def forward(self, action: Any, observation: Any) -> float:
         history: List[str] = observation.get("action_history", [])
         current_action = str(action)
-        full_history = (history + [current_action])[-5:]
+        full_history = (history + [current_action])[-6:]
         reward = 0.0
 
         def _cmd(a: str) -> str:
             return a.split()[0].lower()
 
         cmd = _cmd(current_action)
-        prev_cmds = [_cmd(h) for h in full_history[:-1][-3:]]
+        prev_cmds = [_cmd(h) for h in full_history[:-1]]
 
+        # ── Query after inspect: +0.02 ───────────────────────────────────────
         if cmd.startswith("query_"):
-            if "inspect_dataset" in prev_cmds or "inspect_model" in prev_cmds:
+            if any(p in ("inspect_dataset", "inspect_model") for p in prev_cmds[-3:]):
                 reward += 0.02
+            # Repeated same query without apply in between: -0.05
+            same_query_recent = [p for p in prev_cmds[-3:] if p == cmd]
+            if same_query_recent and "apply" not in prev_cmds[-3:]:
+                reward -= 0.05
 
+        # ── Apply: check if query preceded it ────────────────────────────────
         if cmd == "apply":
-            if any(p.startswith("query_") for p in prev_cmds):
+            if any(p.startswith("query_") for p in prev_cmds[-4:]):
                 reward += 0.05
             else:
-                reward -= 0.04
+                reward -= 0.08      # blind apply — strict penalty (was -0.04)
 
-        if cmd == "validate" and "apply" in prev_cmds:
-            reward += 0.03
+        # ── Validate after apply: +0.04 ──────────────────────────────────────
+        if cmd == "validate":
+            if "apply" in prev_cmds[-3:]:
+                reward += 0.04
+            # Redundant validate (two validates in a row): -0.08
+            if prev_cmds and _cmd(prev_cmds[-1]) == "validate":
+                reward -= 0.08
 
+        # ── Complete loop: validate → apply → validate = +0.06 ───────────────
+        if cmd == "validate" and len(prev_cmds) >= 2:
+            if (any(p == "apply" for p in prev_cmds[-2:]) and
+                    any(p == "validate" for p in prev_cmds[-4:-2])):
+                reward += 0.06
+
+        # ── Reject is fine: +0.01 ────────────────────────────────────────────
         if cmd == "reject":
             reward += 0.01
 
+        # ── Submit: must have validated ───────────────────────────────────────
         if cmd == "submit":
             all_cmds = [_cmd(h) for h in history]
             if "validate" not in all_cmds:
-                reward -= 0.10
+                reward -= 0.15      # submitting blind (was -0.10)
+            elif "apply" not in all_cmds:
+                reward -= 0.05      # queried but never applied anything
 
         logger.debug("ProcessRubric: action=%s reward=%.4f", current_action, reward)
         return round(reward, 4)
@@ -183,8 +260,8 @@ class ProcessRubric(Rubric):
 
 class PreservationRubric(Rubric):
     """
-    Rewards row preservation. Independent of accuracy — prevents the agent
-    from 'cheating' by deleting rows to inflate classifier confidence.
+    Rewards row preservation. Prevents the agent from deleting rows to inflate
+    classifier confidence. Threshold tightened: must keep ≥ 92% (was 90%).
     """
 
     def forward(self, action: Any, observation: Any) -> float:
@@ -192,16 +269,16 @@ class PreservationRubric(Rubric):
         original_rows = observation.get("original_rows", 1)
         rows_preserved = current_rows / max(original_rows, 1)
 
-        if rows_preserved >= 0.90:
+        if rows_preserved >= 0.92:       # tightened from 0.90
             reward = 0.05
-        elif rows_preserved >= 0.80:
+        elif rows_preserved >= 0.85:
             reward = 0.02
-        elif rows_preserved >= 0.70:
-            reward = 0.00
+        elif rows_preserved >= 0.75:
+            reward = -0.05              # new tier: slight penalty (was 0.0)
         elif rows_preserved >= 0.50:
-            reward = -0.10
+            reward = -0.20              # increased from -0.10
         else:
-            reward = -0.40
+            reward = -0.50              # catastrophic (was -0.40)
 
         logger.debug("PreservationRubric: pct=%.2f reward=%.4f", rows_preserved, reward)
         return round(reward, 4)
@@ -213,6 +290,10 @@ class EfficiencyRubric(Rubric):
     """
     Computed ONLY at submit. Rewards high accuracy gain per budget step used.
     Encourages the agent to be surgical rather than spray-and-pray.
+
+    Key change: the efficiency score now has a *minimum penalty* of -0.10 when
+    the agent wastes >80% of its budget and still fails to reach the target.
+    This means a slow, failing agent gets punished more than a fast, failing agent.
     """
 
     def forward(self, action: Any, observation: Any) -> float:
@@ -223,13 +304,20 @@ class EfficiencyRubric(Rubric):
         current          = observation.get("current_accuracy", 0.0)
         original_budget  = observation.get("original_budget", 1)
         budget_remaining = observation.get("budget_remaining", 0)
+        target           = observation.get("target_accuracy", 0.80)
         budget_used      = max(original_budget - budget_remaining, 1)
         accuracy_gain    = current - baseline
 
         if accuracy_gain <= 0:
-            reward = -0.05
+            # Zero or negative gain — wasted all that budget for nothing
+            budget_waste_fraction = budget_used / max(original_budget, 1)
+            reward = -0.10 * budget_waste_fraction   # up to -0.10
+        elif current < target:
+            # Made progress but didn't hit target
+            reward = min((accuracy_gain / budget_used) * 1.5, 0.10)
         else:
-            reward = min((accuracy_gain / budget_used) * 3.0, 0.20)
+            # Hit target — efficiency bonus
+            reward = min((accuracy_gain / budget_used) * 3.0, 0.25)   # raised cap
 
         logger.debug("EfficiencyRubric: gain=%.4f used=%d reward=%.4f",
                      accuracy_gain, budget_used, reward)
@@ -242,8 +330,9 @@ class StepRubric(Rubric):
     """
     Dense per-apply proxy reward — does NOT run the RF classifier.
     Uses lightweight quality score delta to give feedback between validate calls.
-    Registered as a standalone rubric (not a child of DataCentricRubric)
-    because it fires on every apply step, not just at episode end.
+
+    Key change: quality improvements get a stronger signal, quality regressions
+    get a harsher penalty. This forces the model to commit to correct fixes.
     """
 
     def forward(self, action: Any, observation: Any) -> float:
@@ -253,15 +342,24 @@ class StepRubric(Rubric):
         q_before = observation.get("quality_before", 0.0)
         q_after  = observation.get("quality_after", 0.0)
         rows_pct = observation.get("rows_preserved_after", 1.0)
+        delta    = q_after - q_before
 
-        r = float(np.clip((q_after - q_before) * 0.3, -0.20, 0.10))
+        if delta > 0:
+            r = float(np.clip(delta * 0.50, 0.0, 0.12))   # stronger positive signal
+        elif delta < 0:
+            r = float(np.clip(delta * 0.60, -0.25, 0.0))  # harsher negative signal
+        else:
+            r = -0.02   # zero-delta apply wastes budget — small penalty
 
+        # Row preservation modifier
         if rows_pct >= 0.95:
             r += 0.02
         elif rows_pct >= 0.90:
             r += 0.01
+        elif rows_pct < 0.85:
+            r -= 0.08   # stricter than before (was -0.10 only below 0.80)
         elif rows_pct < 0.80:
-            r -= 0.10
+            r -= 0.15
 
         return float(np.clip(r, -0.30, 0.15))
 
@@ -279,16 +377,14 @@ class DataCentricRubric(Rubric):
         rubric.efficiency   → EfficiencyRubric
 
     Call rubric(action, obs_dict) to get total clamped reward [-1.0, 1.0].
-    Inspect rubric.accuracy.last_score etc. for per-component breakdown.
     """
 
     def __init__(self):
         super().__init__()
-        # Assigned as attributes — auto-registered as children by Rubric.__setattr__
-        self.accuracy    = AccuracyRubric()
-        self.process     = ProcessRubric()
+        self.accuracy     = AccuracyRubric()
+        self.process      = ProcessRubric()
         self.preservation = PreservationRubric()
-        self.efficiency  = EfficiencyRubric()
+        self.efficiency   = EfficiencyRubric()
 
     def forward(self, action: Any, observation: Any) -> float:
         r_acc  = self.accuracy(action, observation)
@@ -309,7 +405,6 @@ class DataCentricRubric(Rubric):
         return round(clamped, 4)
 
     def breakdown(self) -> Dict[str, Optional[float]]:
-        """Return last_score for each child rubric — useful for logging."""
         return {
             "accuracy":     self.accuracy.last_score,
             "process":      self.process.last_score,
@@ -318,7 +413,7 @@ class DataCentricRubric(Rubric):
         }
 
 
-# ── Singleton — reuse across episode steps ────────────────────────────────────
+# ── Singleton ─────────────────────────────────────────────────────────────────
 
 _rubric: Optional[DataCentricRubric] = None
 _step_rubric: Optional[StepRubric] = None
@@ -339,15 +434,18 @@ def get_step_rubric() -> StepRubric:
 
 
 # ── Backward-compatible free functions ───────────────────────────────────────
-# (called by data_centric_environment.py — no changes needed there)
 
 def compute_accuracy_reward(
     current_accuracy: float, previous_accuracy: float,
     baseline_accuracy: float, target_accuracy: float,
     is_submit: bool = False,
+    budget_used: int = 1, budget_total: int = 30,
 ) -> float:
-    obs = dict(current_accuracy=current_accuracy, previous_accuracy=previous_accuracy,
-               baseline_accuracy=baseline_accuracy, target_accuracy=target_accuracy)
+    obs = dict(
+        current_accuracy=current_accuracy, previous_accuracy=previous_accuracy,
+        baseline_accuracy=baseline_accuracy, target_accuracy=target_accuracy,
+        budget_used=budget_used, budget_total=budget_total,
+    )
     action = "submit" if is_submit else "step"
     return get_rubric().accuracy(action, obs)
 
@@ -365,9 +463,13 @@ def compute_preservation_reward(current_rows: int, original_rows: int) -> float:
 def compute_efficiency_reward(
     current_accuracy: float, baseline_accuracy: float,
     original_budget: int, budget_remaining: int,
+    target_accuracy: float = 0.80,
 ) -> float:
-    obs = dict(current_accuracy=current_accuracy, baseline_accuracy=baseline_accuracy,
-               original_budget=original_budget, budget_remaining=budget_remaining)
+    obs = dict(
+        current_accuracy=current_accuracy, baseline_accuracy=baseline_accuracy,
+        original_budget=original_budget, budget_remaining=budget_remaining,
+        target_accuracy=target_accuracy,
+    )
     return get_rubric().efficiency("submit", obs)
 
 

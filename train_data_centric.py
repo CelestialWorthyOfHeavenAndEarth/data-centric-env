@@ -162,21 +162,20 @@ class CurriculumScheduler:
     TASKS = ["task_0_tutorial", "task_1_easy", "task_2_medium", "task_3_hard"]
     LEVEL_LABELS = ["tutorial", "easy", "medium", "hard"]
 
-    def __init__(self, window: int = 30, threshold: float = 0.60):
+    def __init__(self, window: int = 20, threshold: float = 0.70):
         """
         Args:
-            window: Number of episodes to evaluate before considering advancement.
-                    30 gives a stable estimate without waiting too long.
-            threshold: Required success rate (0.0–1.0) to advance to next level.
-                       0.60 = agent must solve 60% of episodes to advance.
-                       Lower than classic 0.75 because 3B models learn slower.
+            window:    Episodes to evaluate before considering advancement.
+                       20 is faster feedback than 30 — sees gradient sooner.
+            threshold: 0.70 = must solve 70% of episodes to advance.
+                       Raised from 0.60 to prevent saturation on easy levels.
         """
-        self.current_level = 0
+        self.current_level = 1          # Start at 'easy' — skip trivial tutorial
         self.window = window
         self.threshold = threshold
         self.recent_successes: deque = deque(maxlen=window)
-        self.global_step = 0          # total episodes recorded (for logging)
-        self.level_history: list = [] # (episode, level) pairs for plotting
+        self.global_step = 0
+        self.level_history: list = []
 
     def record_episode(self, reached_target: bool, accuracy_gain: float = 0.0):
         """Call after every episode completes."""

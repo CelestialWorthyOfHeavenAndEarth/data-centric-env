@@ -628,11 +628,14 @@ class DataCentricEnvironment(Environment):
             acc, self._previous_accuracy,
             cfg["baseline_accuracy"], cfg["target_accuracy"],
             is_submit=True,
+            budget_used=self._state.step_count,
+            budget_total=cfg["budget"],
         )
         r_process = compute_process_reward(self._action_history[:-1], "submit")
         r_preservation = compute_preservation_reward(len(self._working_copy), orig_len)
         r_efficiency = compute_efficiency_reward(
-            acc, cfg["baseline_accuracy"], cfg["budget"], max(budget_remaining, 0)
+            acc, cfg["baseline_accuracy"], cfg["budget"], max(budget_remaining, 0),
+            target_accuracy=cfg["target_accuracy"],
         )
 
         total = compute_total_reward(r_accuracy, r_process, r_preservation, r_efficiency)
