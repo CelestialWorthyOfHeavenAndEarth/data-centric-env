@@ -64,9 +64,9 @@ _LANDING_HTML = """<!DOCTYPE html>
   <h1>&#x1F9E0; Data-Centric AI Environment</h1>
   <span class="badge">&#x2022; Running</span>
   <p>An <a href="https://github.com/meta-pytorch/OpenEnv" target="_blank">OpenEnv</a>-compliant
-  RL environment where a language model learns to orchestrate specialist data-repair agents
-  — imputing, rebalancing, and augmenting corrupted pipelines to rehabilitate an
-  <strong>inference-locked production model</strong>, purely through data-centric interventions.</p>
+  RL environment where an LLM learns to coordinate data-preprocessing agents — cleaning,
+  imputing, and rebalancing datasets to improve a pre-trained classifier's accuracy,
+  without modifying its weights.</p>
 
   <div class="grid">
     <div class="endpoint">
