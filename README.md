@@ -235,7 +235,7 @@ pip install openenv-core requests
 from client import DataCentricEnv
 from models import DataCentricAction
 
-with DataCentricEnv(base_url="https://Aswini-Kumar-data-centric-env.hf.space").sync() as env:
+with DataCentricEnv(base_url="https://aswini-kumar-data-centric-env.hf.space").sync() as env:
     result = env.reset(task="task_1_easy", seed=42)
     obs = result.observation
     print(f"Baseline: {obs.baseline_accuracy:.2f}  Target: {obs.target_accuracy:.2f}")
