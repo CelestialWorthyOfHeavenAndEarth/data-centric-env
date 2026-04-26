@@ -37,16 +37,11 @@ subprocess.check_call([
     "numpy>=1.24.0",
     "matplotlib",
     "huggingface_hub",
-    "wandb",                           # experiment tracking (required)
+    # TensorBoard already included in torch — no extra install needed
 ])
 
-# ── Set up W&B experiment tracking ────────────────────────────────────────────
-os.environ.setdefault("WANDB_PROJECT", "data-centric-ai-agent")
-os.environ.setdefault("WANDB_LOG_MODEL", "false")  # don't upload model artifacts to wandb
-print(f"[Job] W&B project: {os.environ['WANDB_PROJECT']}")
-
-import wandb
-wandb.login(key=HF_TOKEN, relogin=False, anonymous="never")  # HF_TOKEN used if WANDB_API_KEY not set
+# ── Experiment tracking: TensorBoard (no API key needed) ──────────────────────
+print("[Job] TensorBoard experiment tracking enabled (logs/grpo, logs/sft)")
 
 # ── 2. Verify HF Space is healthy ─────────────────────────────────────────────
 print(f"\n[Job] Waiting for Space at {ENV_URL} ...")
