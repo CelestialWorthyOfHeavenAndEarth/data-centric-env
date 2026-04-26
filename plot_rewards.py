@@ -98,8 +98,14 @@ def load_log(log_path: str) -> pd.DataFrame:
 
     df.sort_values("episode", inplace=True)
     df.reset_index(drop=True, inplace=True)
-    print(f"[plot_rewards] Loaded {len(df)} episodes from {log_path}")
+    n = len(df)
+    print(f"[plot_rewards] Loaded {n} episodes from {log_path}")
     return df
+
+
+def _adaptive_window(df: pd.DataFrame, requested: int) -> int:
+    """Use min(requested, len/3) so plots are never flat lines with few data points."""
+    return max(3, min(requested, len(df) // 3))
 
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
@@ -235,16 +241,33 @@ def plot_all(log_path: str = "logs/training.jsonl", out_dir: str = "plots/",
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    plot_reward_curve(df, out, window)
-    plot_success_rate(df, out, window)
-    plot_accuracy_gain(df, out, window)
+    # Adaptive window — avoid flat lines with small datasets
+    w = _adaptive_window(df, window)
+
+    plot_reward_curve(df, out, w)
+    plot_success_rate(df, out, w)
+    plot_accuracy_gain(df, out, w)
     plot_curriculum(df, out)
 
-    print(f"\n[plot_rewards] All plots saved to {out}/")
-    print(f"  Episodes: {len(df)} | "
-          f"Avg reward: {df['reward'].mean():.3f} | "
-          f"Success rate: {df['success'].mean():.1%} | "
-          f"Max level reached: {int(df['level'].max())}")
+    # ── Print summary stats ───────────────────────────────────────────────────
+    n = len(df)
+    avg_r = df["reward"].mean()
+    max_r = df["reward"].max()
+    min_r = df["reward"].min()
+    succ  = df["success"].mean()
+    max_lvl = int(df["level"].max())
+    lvl_names = {0: "tutorial", 1: "easy", 2: "medium", 3: "hard"}
+
+    print(f"\n{'='*50}")
+    print(f"  TRAINING SUMMARY ({n} episodes)")
+    print(f"{'='*50}")
+    print(f"  Avg reward   : {avg_r:+.3f}")
+    print(f"  Min / Max    : {min_r:+.3f} / {max_r:+.3f}")
+    print(f"  Success rate : {succ:.1%}")
+    print(f"  Max level    : {max_lvl} ({lvl_names.get(max_lvl, '?')})")
+    print(f"  Window used  : {w} episodes")
+    print(f"{'='*50}")
+    print(f"\n  Plots saved to: {out}/")
 
 
 if __name__ == "__main__":
