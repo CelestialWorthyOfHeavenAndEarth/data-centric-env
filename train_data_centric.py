@@ -477,22 +477,25 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None, max_steps: 
 
     grpo_config = GRPOConfig(
         output_dir="./data-centric-checkpoints",
-        # ── Iteration speed (iterate fast on small model = better results) ──
-        per_device_train_batch_size=2,   # saves VRAM on T4
-        gradient_accumulation_steps=2,   # effective batch = 4
-        num_generations=2,               # rollouts per step
-        max_completion_length=30,        # commands are short (<= 20 chars)
+        # WHY batch_size=1, num_generations=1:
+        #   Each generation = 1 full live episode (~100s on T4 with env).
+        #   2 generations x 200 steps = ~11 hrs. 1 generation x 50 steps = ~1.5 hrs.
+        #   GRPO minimum requires num_generations >= 1.
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=2,   # effective batch = 2
+        num_generations=1,
+        max_completion_length=30,        # longest command is ~15 chars
         max_prompt_length=400,
-        # ── Steps ────────────────────────────────────────────────────────────
-        # 200 steps @ ~15s/step = ~50 min — enough for clear reward curves.
-        # GRPO learns from env reward signals, not dataset size, so this is fine.
-        # num_train_epochs is ignored when max_steps > 0.
-        max_steps=200 if max_steps <= 0 else max_steps,
+        # WHY max_steps=50:
+        #   Each step runs 1 full live episode (~100s with env roundtrips).
+        #   50 steps = ~1.5 hrs — enough for a clear reward learning curve.
+        #   Increase to 100 if you have more GPU time (A100 is ~3x faster).
+        max_steps=50 if max_steps <= 0 else max_steps,
         learning_rate=5e-6,
-        warmup_steps=10,
+        warmup_steps=5,
         # ── Logging / checkpointing ──────────────────────────────────────────
         logging_steps=5,
-        save_steps=50,
+        save_steps=25,
         # ── Experiment tracking ──────────────────────────────────────────────
         report_to="tensorboard",
         logging_dir="./logs/grpo",
