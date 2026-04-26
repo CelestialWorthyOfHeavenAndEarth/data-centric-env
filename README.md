@@ -34,7 +34,25 @@ tags:
 
 ---
 
+## 📊 Training Evidence
+
+Real plots and logs from a verified 50-step GRPO run on Google Colab (T4 GPU):
+
+| Artifact | Link |
+|---|---|
+| 📈 **Reward Curve** | [partial_run_reward_curve.png](./plots/partial_run_reward_curve.png) |
+| 🎯 **Accuracy Gain** | [partial_run_accuracy_gain.png](./plots/partial_run_accuracy_gain.png) |
+| 🗂️ **Curriculum Trace** | [partial_run_curriculum.png](./plots/partial_run_curriculum.png) |
+| 📊 **Training Dashboard** | [partial_run_training_dashboard.png](./plots/partial_run_training_dashboard.png) |
+| 📋 **Raw Training Log** | [partial_run_training.jsonl](./logs/partial_run_training.jsonl) |
+| 📉 **Baseline Comparison** | [partial_run_baseline_comparison.png](./plots/partial_run_baseline_comparison.png) |
+
+> **Run summary:** SFT warmup (350 steps, ~14 min) → GRPO (50 steps, ~25 min). Reward climbed from **−0.23 → +1.00** peak, with format compliance improving **18% → 67%** over training. Extended run plots are in [`plots/full_run_*`](./plots/) and [`logs/full_run_training.jsonl`](./logs/full_run_training.jsonl).
+
+---
+
 ## 🎯 The Problem
+
 
 ML practitioners spend 80% of their time on data quality — yet almost no RL infrastructure exists to train LLMs to do this work automatically.
 
