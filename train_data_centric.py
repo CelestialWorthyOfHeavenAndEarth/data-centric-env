@@ -448,11 +448,19 @@ def log_episode_jsonl(
 # GRPO TRAINING LOOP
 # ════════════════════════════════════════════════════════
 
-def run_grpo_training(model, tokenizer, resume_from_checkpoint=None):
+def run_grpo_training(model, tokenizer, resume_from_checkpoint=None, max_steps: int = -1):
+    """
+    Phase 2: GRPO training via live environment rollouts.
+
+    Args:
+        max_steps: If > 0, stop after this many steps (use for demo/quick runs).
+                   If -1 (default), run for num_train_epochs.
+    """
     print("\n=== PHASE 2: GRPO TRAINING ===")
     if resume_from_checkpoint:
         print(f"Resuming from checkpoint: {resume_from_checkpoint}")
-
+    if max_steps > 0:
+        print(f"[Demo] max_steps={max_steps} (quick run mode)")
     print("[Tracking] TensorBoard experiment tracking ON — logs written to ./logs/grpo")
 
     scheduler = CurriculumScheduler()
@@ -460,18 +468,19 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None):
     grpo_config = GRPOConfig(
         output_dir="./data-centric-checkpoints",
         # ── Iteration speed config (winning tip: iterate fast on small model) ──
-        per_device_train_batch_size=2,   # was 4 — saves VRAM on T4
-        gradient_accumulation_steps=2,   # was 4 — 2x faster steps
-        num_generations=2,               # was 4 — 2x fewer rollouts per step
-        max_completion_length=30,        # commands are ≤ 20 chars; was 50
-        max_prompt_length=400,           # trimmed; was 900
-        # ── Learning rate schedule ──────────────────────────────────────────
+        per_device_train_batch_size=2,   # saves VRAM on T4
+        gradient_accumulation_steps=2,   # faster steps
+        num_generations=2,               # fewer rollouts per step
+        max_completion_length=30,        # commands are short (≤ 20 chars)
+        max_prompt_length=400,
+        # ── Steps / epochs ──────────────────────────────────────────────────
         num_train_epochs=3,
+        max_steps=max_steps,             # -1 = disabled; >0 = hard cap for demos
         learning_rate=5e-6,
-        warmup_steps=10,                 # was 20 — faster warmup
+        warmup_steps=10,
         # ── Logging / checkpointing ─────────────────────────────────────────
-        logging_steps=5,                 # was 10 — more frequent logs
-        save_steps=25,                   # was 50 — checkpoint more often
+        logging_steps=5,
+        save_steps=25,
         # ── Experiment tracking ─────────────────────────────────────────────
         report_to="tensorboard",
         logging_dir="./logs/grpo",
