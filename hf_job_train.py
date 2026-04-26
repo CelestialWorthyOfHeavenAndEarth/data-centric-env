@@ -23,6 +23,7 @@ print(f"[Job] Python    : {sys.version}")
 print("\n[Job] Installing dependencies...")
 subprocess.check_call([
     sys.executable, "-m", "pip", "install", "-q",
+    "torchao==0.6.1",
     "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
     "trl>=0.15.0", "datasets>=2.0.0", "transformers>=4.40.0",
     "accelerate>=0.30.0", "openenv-core[core]>=0.2.1",

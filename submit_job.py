@@ -12,34 +12,40 @@ from huggingface_hub import HfApi
 
 TOKEN = os.environ.get("HF_TOKEN") or input("Enter your HF token (hf_...): ").strip()
 
-# The Docker image built by your HF Space
-SPACE_IMAGE  = "registry.hf.space/aswini-kumar/data-centric-env:latest"
+# We use a stable PyTorch image (2.5.1) to avoid Unsloth/TorchAO incompatibility in 2.6
+SPACE_IMAGE  = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel"
 ENV_URL      = "https://aswini-kumar-data-centric-env.hf.space"
+REPO_URL     = "https://huggingface.co/spaces/Aswini-Kumar/data-centric-env"
 
 api = HfApi(token=TOKEN)
 
 print("Submitting HF training job...")
 print(f"  Docker image: {SPACE_IMAGE}")
 print(f"  ENV_URL     : {ENV_URL}")
-print(f"  Hardware    : gpu-t4-small (~$0.40/hr)")
+print(f"  Hardware    : a10g-large (Fast GPU)")
+
+# Command installs git, clones your repository, and runs training
+bash_cmd = f"""
+apt-get update && apt-get install -y git && \\
+git clone {REPO_URL} /app && cd /app && \\
+pip install -q torchao==0.6.1 && \\
+pip install -q 'unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git' \\
+trl>=0.15.0 datasets>=2.0.0 transformers>=4.40.0 accelerate>=0.30.0 matplotlib && \\
+pip install -e . && \\
+python hf_job_train.py
+"""
 
 job = api.run_job(
     image=SPACE_IMAGE,
-    command=[
-        "bash", "-c",
-        # Install GPU deps first (not in base image), then train
-        "pip install -q 'unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git' "
-        "trl>=0.15.0 datasets>=2.0.0 transformers>=4.40.0 accelerate>=0.30.0 matplotlib && "
-        "python hf_job_train.py"
-    ],
+    command=["bash", "-c", bash_cmd],
     env={
         "ENV_URL":  ENV_URL,
         "HF_TOKEN": TOKEN,
     },
-    flavor="t4-small",
+    flavor="a10g-large",
 )
 
-print(f"\n✅ Job submitted!")
+print(f"\nJob submitted successfully!")
 print(f"   Job ID  : {job.id}")
 print(f"   Status  : {job.status}")
 print(f"   Monitor : https://huggingface.co/settings/jobs")
