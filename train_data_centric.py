@@ -480,13 +480,13 @@ def run_grpo_training(model, tokenizer, resume_from_checkpoint=None, max_steps: 
 
     grpo_config = GRPOConfig(
         output_dir="./data-centric-checkpoints",
-        # WHY batch_size=1, num_generations=1:
+        # WHY batch_size=1, num_generations=2:
+        #   GRPO REQUIRES num_generations >= 2 to compute advantages (compares outputs).
+        #   Setting 1 raises ValueError. 2 is the minimum.
         #   Each generation = 1 full live episode (~100s on T4 with env).
-        #   2 generations x 200 steps = ~11 hrs. 1 generation x 50 steps = ~1.5 hrs.
-        #   GRPO minimum requires num_generations >= 1.
         per_device_train_batch_size=1,
         gradient_accumulation_steps=2,   # effective batch = 2
-        num_generations=1,
+        num_generations=2,               # minimum required by GRPO
         max_completion_length=30,        # longest command is ~15 chars
         max_prompt_length=400,
         # WHY max_steps=50:
